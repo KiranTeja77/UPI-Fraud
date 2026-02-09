@@ -1,0 +1,33 @@
+# Dependencies
+node_modules
+client/node_modules
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+client/.env
+
+# Build outputs
+dist
+build
+client/dist
+
+# Development files
+.git
+.gitignore
+*.md
+.vscode
+.idea
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+
+# Other
+.DS_Store
+Thumbs.db
