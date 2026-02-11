@@ -84,7 +84,7 @@ app.listen(PORT, () => {
 ║                                                               ║
 ║   Server running on port ${PORT}                                 ║
 ║   API Key: ${config.apiKey ? 'Configured ✓' : 'NOT SET ✗'}                               ║
-║   Perplexity AI: ${config.perplexityApiKey ? 'Configured ✓' : 'NOT SET (using fallback)'}              ║
+║   Gemini AI:     ${config.geminiApiKey ? 'Configured ✓' : 'NOT SET (using fallback)'}              ║
 ║                                                               ║
 ║   Endpoints:                                                  ║
 ║   - POST /api/honeypot          (Process messages)            ║

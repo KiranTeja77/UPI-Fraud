@@ -1,14 +1,14 @@
 import OpenAI from 'openai';
 import config from '../config/config.js';
 
-// Initialize Perplexity client (OpenAI-compatible)
-let perplexity = null;
+// Initialize Gemini client (OpenAI-compatible)
+let gemini = null;
 
 function initializeAI() {
-    if (!perplexity && config.perplexityApiKey) {
-        perplexity = new OpenAI({
-            apiKey: config.perplexityApiKey,
-            baseURL: 'https://api.perplexity.ai'
+    if (!gemini && config.geminiApiKey) {
+        gemini = new OpenAI({
+            apiKey: config.geminiApiKey,
+            baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
         });
     }
 }
@@ -71,13 +71,13 @@ function calculateRuleBasedScore(text) {
 }
 
 /**
- * AI-powered scam detection using Perplexity
+ * AI-powered scam detection using Gemini
  */
 async function detectWithAI(text, conversationHistory = []) {
     initializeAI();
 
-    if (!perplexity) {
-        console.warn('Perplexity AI not initialized, using rule-based detection only');
+    if (!gemini) {
+        console.warn('Gemini AI not initialized, using rule-based detection only');
         return null;
     }
 
@@ -109,8 +109,8 @@ Respond ONLY with a JSON object in this exact format:
   "reasoning": "brief explanation"
 }`;
 
-        const response = await perplexity.chat.completions.create({
-            model: config.perplexityModel,
+        const response = await gemini.chat.completions.create({
+            model: config.geminiModel,
             messages: [
                 { role: 'system', content: 'You are a scam detection expert. Always respond with valid JSON only.' },
                 { role: 'user', content: prompt }

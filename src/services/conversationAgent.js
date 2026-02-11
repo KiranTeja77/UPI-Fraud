@@ -1,14 +1,14 @@
 import OpenAI from 'openai';
 import config from '../config/config.js';
 
-// Initialize Perplexity client (OpenAI-compatible)
-let perplexity = null;
+// Initialize Gemini client (OpenAI-compatible)
+let gemini = null;
 
 function initializeAI() {
-    if (!perplexity && config.perplexityApiKey) {
-        perplexity = new OpenAI({
-            apiKey: config.perplexityApiKey,
-            baseURL: 'https://api.perplexity.ai'
+    if (!gemini && config.geminiApiKey) {
+        gemini = new OpenAI({
+            apiKey: config.geminiApiKey,
+            baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
         });
     }
 }
@@ -73,12 +73,12 @@ function selectPersona(messageCount, scamType) {
 }
 
 /**
- * Generate AI-powered response using Perplexity
+ * Generate AI-powered response using Gemini
  */
 async function generateAIResponse(scammerMessage, conversationHistory, scamType, messageCount) {
     initializeAI();
 
-    if (!perplexity) {
+    if (!gemini) {
         // Fallback to template responses
         const persona = selectPersona(messageCount, scamType);
         return getPersonaResponse(persona);
@@ -116,8 +116,8 @@ ${messageCount > 8 ? '- Pretend to look for information, stall for time, ask spe
 
 Generate a SHORT (1-2 sentences max) natural response. Do NOT use quotation marks. Do NOT include any system text or explanations.`;
 
-        const response = await perplexity.chat.completions.create({
-            model: config.perplexityModel,
+        const response = await gemini.chat.completions.create({
+            model: config.geminiModel,
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }

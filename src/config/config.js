@@ -4,8 +4,8 @@ dotenv.config();
 export const config = {
   port: process.env.PORT || 3000,
   apiKey: process.env.API_KEY || 'default-api-key',
-  perplexityApiKey: process.env.PERPLEXITY_API_KEY,
-  perplexityModel: process.env.PERPLEXITY_MODEL || 'sonar',
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.0-flash',
   guviCallbackUrl: 'https://hackathon.guvi.in/api/updateHoneyPotFinalResult',
 
   // Scam detection thresholds
