@@ -5,7 +5,7 @@ export const config = {
   port: process.env.PORT || 3000,
   apiKey: process.env.API_KEY || 'default-api-key',
   geminiApiKey: process.env.GEMINI_API_KEY,
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
   guviCallbackUrl: 'https://hackathon.guvi.in/api/updateHoneyPotFinalResult',
 
   // Scam detection thresholds
