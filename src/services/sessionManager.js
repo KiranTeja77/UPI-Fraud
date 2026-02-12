@@ -21,8 +21,9 @@ class SessionManager {
                 sessionId,
                 createdAt: new Date(),
                 lastActivity: new Date(),
-                scamDetected: false,
-                scamConfidence: 0,
+                scamDetected: false,          // Has this session ever been classified as scam
+                scamConfidence: 0,            // Aggregated confidence across scammer messages
+                scamScores: [],               // Per-message scam confidences for scammer messages
                 messageCount: 0,
                 conversationHistory: [],
                 extractedIntelligence: {

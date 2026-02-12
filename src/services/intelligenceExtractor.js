@@ -6,10 +6,11 @@
 // Regex patterns for intelligence extraction
 const patterns = {
     // Bank account patterns (Indian format)
+    // NOTE: We intentionally avoid matching plain long digit sequences without context,
+    // to reduce false positives when users type random numbers.
     bankAccounts: [
-        /\b\d{9,18}\b/g,  // 9-18 digit account numbers
-        /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,  // Card-like patterns
-        /(?:account|a\/c|ac)\s*(?:no|number|#)?[:\s]*(\d{9,18})/gi,
+        /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,  // Card-like patterns (16-digit, grouped)
+        /(?:account|a\/c|ac)\s*(?:no|number|#)?[:\s]*(\d{9,18})/gi, // Explicit "account" context
     ],
 
     // UPI ID patterns
@@ -20,8 +21,10 @@ const patterns = {
 
     // Phone number patterns (Indian format)
     phoneNumbers: [
-        /(?:\+91|91)?[- ]?[6-9]\d{9}\b/g,
-        /(?:\+91|91)?[- ]?\d{5}[- ]?\d{5}\b/g,
+        // Require start-of-string or non-digit before, and no digit after,
+        // so that we don't accidentally grab the tail of a longer bank/account number
+        /(?:(?<=\D)|^)(?:\+91|91)?[- ]?[6-9]\d{9}(?!\d)/g,
+        /(?:(?<=\D)|^)(?:\+91|91)?[- ]?\d{5}[- ]?\d{5}(?!\d)/g,
     ],
 
     // URL/Link patterns
@@ -90,9 +93,12 @@ function extractUpiIds(text) {
 
 /**
  * Extract phone numbers from text
+ * Bank/account numbers are extracted first; we then avoid treating any
+ * contiguous 10‑digit slice of a longer bank number as a phone number.
  */
-function extractPhoneNumbers(text) {
+function extractPhoneNumbers(text, bankAccounts = []) {
     const phones = new Set();
+    const bankDigits = bankAccounts.map(acc => String(acc).replace(/\D/g, ''));
 
     for (const pattern of patterns.phoneNumbers) {
         const matches = text.match(pattern);
@@ -100,6 +106,19 @@ function extractPhoneNumbers(text) {
             matches.forEach(match => {
                 // Normalize phone number
                 let cleaned = match.replace(/[-\s]/g, '');
+
+                // Raw digit sequence for comparison against bank accounts
+                const digitsOnly = cleaned.replace(/\D/g, '');
+
+                // If this digit sequence is a strict substring of any known bank
+                // account number, skip it to avoid misclassification
+                const isPartOfBank = bankDigits.some(acc =>
+                    acc.length > digitsOnly.length && acc.includes(digitsOnly)
+                );
+                if (isPartOfBank) {
+                    return;
+                }
+
                 if (cleaned.startsWith('91') && cleaned.length === 12) {
                     cleaned = '+' + cleaned;
                 } else if (cleaned.length === 10) {
@@ -159,10 +178,11 @@ function extractSuspiciousKeywords(text) {
  * Extract all intelligence from a message
  */
 export function extractIntelligence(text) {
+    const bankAccounts = extractBankAccounts(text);
     return {
-        bankAccounts: extractBankAccounts(text),
+        bankAccounts,
         upiIds: extractUpiIds(text),
-        phoneNumbers: extractPhoneNumbers(text),
+        phoneNumbers: extractPhoneNumbers(text, bankAccounts),
         phishingLinks: extractPhishingLinks(text),
         suspiciousKeywords: extractSuspiciousKeywords(text)
     };

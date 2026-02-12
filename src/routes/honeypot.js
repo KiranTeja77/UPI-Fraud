@@ -53,17 +53,42 @@ router.post('/', authenticateApiKey, async (req, res) => {
         const messageIntelligence = extractIntelligence(message.text);
         sessionManager.addIntelligence(sessionId, messageIntelligence);
 
-        // Detect scam intent
+        // Detect scam intent for the CURRENT message
         const scamResult = await detectScam(message.text, session.conversationHistory);
 
-        if (scamResult.isScam) {
-            sessionManager.updateScamStatus(sessionId, true, scamResult.confidence);
-            session.scamType = scamResult.scamType;
+        // Maintain per-session aggregate scam confidence based ONLY on scammer messages
+        if (message.sender === 'scammer') {
+            if (!Array.isArray(session.scamScores)) {
+                session.scamScores = [];
+            }
 
-            // Add detection note
-            sessionManager.addAgentNote(sessionId,
-                `Scam detected with ${Math.round(scamResult.confidence * 100)}% confidence. Type: ${scamResult.scamType}. Indicators: ${scamResult.indicators.join(', ')}`
-            );
+            session.scamScores.push(scamResult.confidence || 0);
+
+            // Average confidence across all scammer messages so far
+            const totalScore = session.scamScores.reduce((sum, v) => sum + v, 0);
+            const avgScore = session.scamScores.length > 0 ? totalScore / session.scamScores.length : 0;
+
+            // Determine if session should be considered a scam
+            const isSessionScam = session.scamDetected || avgScore >= config.scamThreshold;
+
+            // Once a session is marked as scam, NEVER downgrade it back to safe
+            const updatedScamDetected = session.scamDetected || isSessionScam;
+
+            // Store the aggregated confidence on the session
+            const aggregatedConfidence = avgScore;
+
+            sessionManager.updateScamStatus(sessionId, updatedScamDetected, aggregatedConfidence);
+
+            if (updatedScamDetected && !session.scamType) {
+                session.scamType = scamResult.scamType || 'suspected scam';
+            }
+
+            // Add detection note only when we newly cross the threshold
+            if (!session.scamDetected && isSessionScam) {
+                sessionManager.addAgentNote(sessionId,
+                    `Scam detected with ${Math.round(aggregatedConfidence * 100)}% average confidence across messages. Type: ${session.scamType}.`
+                );
+            }
         }
 
         // Generate agent response
@@ -114,8 +139,11 @@ router.post('/', authenticateApiKey, async (req, res) => {
             reply: agentResponse.reply,
             debug: {
                 sessionId,
+                // Use aggregated session-level view so UI doesn't flip back to "safe"
                 scamDetected: session.scamDetected,
-                confidence: scamResult.confidence,
+                confidence: session.scamConfidence,
+                // Provide instant confidence for debugging if needed
+                lastMessageConfidence: scamResult.confidence,
                 messageCount: session.messageCount,
                 responseTimeMs: responseTime,
                 callbackSent: session.callbackSent
