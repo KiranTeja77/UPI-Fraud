@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import config from './config/config.js';
 import honeypotRoutes from './routes/honeypot.js';
+import upifraudRoutes from './routes/upifraud.js';
 
 // Initialize Express app
 const app = express();
@@ -41,10 +42,15 @@ app.get('/health', (req, res) => {
 // API info endpoint
 app.get('/api', (req, res) => {
     res.json({
-        name: 'Agentic Honey-Pot API',
-        version: '1.0.0',
-        description: 'AI-powered honeypot for scam detection and intelligence extraction',
+        name: 'UPI Fraud Detection & Honey-Pot API',
+        version: '2.0.0',
+        description: 'AI-powered UPI fraud detection with regional alerts, risk scoring, and safety education',
         endpoints: {
+            'POST /api/upi/analyze': 'Analyze a UPI transaction for fraud',
+            'POST /api/upi/alert': 'Generate regional language fraud alert',
+            'GET /api/upi/languages': 'Get supported languages',
+            'GET /api/upi/tips': 'Get safety tips (optional ?category= filter)',
+            'POST /api/upi/tips/contextual': 'Get contextual safety tips',
             'POST /api/honeypot': 'Process incoming scam message',
             'GET /api/honeypot/session/:sessionId': 'Get session details',
             'POST /api/honeypot/session/:sessionId/callback': 'Manually trigger GUVI callback',
@@ -54,8 +60,9 @@ app.get('/api', (req, res) => {
     });
 });
 
-// Mount honeypot routes
+// Mount routes
 app.use('/api/honeypot', honeypotRoutes);
+app.use('/api/upi', upifraudRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -80,16 +87,22 @@ app.listen(PORT, () => {
     console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
 ║                                                               ║
-║   🍯 Agentic Honey-Pot API Server                              ║
+║   🛡️  UPI Fraud Detection API Server                          ║
 ║                                                               ║
 ║   Server running on port ${PORT}                                 ║
 ║   API Key: ${config.apiKey ? 'Configured ✓' : 'NOT SET ✗'}                               ║
-║   Gemini AI:     ${config.geminiApiKey ? 'Configured ✓' : 'NOT SET (using fallback)'}              ║
+║   Gemini AI: ${config.geminiApiKey ? 'Configured ✓' : 'NOT SET (using fallback)'}                  ║
 ║                                                               ║
-║   Endpoints:                                                  ║
+║   UPI Fraud Endpoints:                                        ║
+║   - POST /api/upi/analyze       (Analyze transaction)         ║
+║   - POST /api/upi/alert         (Regional language alert)     ║
+║   - GET  /api/upi/languages     (Supported languages)         ║
+║   - GET  /api/upi/tips          (Safety tips)                 ║
+║   - POST /api/upi/tips/contextual (Contextual tips)           ║
+║                                                               ║
+║   Honeypot Endpoints:                                         ║
 ║   - POST /api/honeypot          (Process messages)            ║
 ║   - GET  /api/honeypot/session/:id (Get session info)         ║
-║   - POST /api/honeypot/session/:id/callback (Force callback)  ║
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
   `);

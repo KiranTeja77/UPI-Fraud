@@ -5,466 +5,665 @@ import './App.css';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const API_KEY = import.meta.env.VITE_API_KEY || 'honeypot-secret-key-2024';
 
-// Quick message templates
-const QUICK_MESSAGES = [
-  { label: '🏦 Bank Fraud', message: 'Your SBI account will be blocked today. Share OTP immediately to verify.' },
-  { label: '🎰 Lottery Scam', message: 'Congratulations! You won Rs. 50 Lakhs lottery. Pay Rs. 5000 processing fee. UPI: winner@paytm' },
-  { label: '📋 KYC Scam', message: 'This is RBI calling. Your KYC is expired. Update now at http://rbi-kyc.xyz or face legal action.' },
-  { label: '💳 UPI Fraud', message: 'Dear customer, your UPI ID is being misused. Share PIN to block. Contact: +919876543210' },
+// Example scam messages for quick testing
+const EXAMPLE_MESSAGES = [
+  {
+    label: '🎣 KYC Phishing',
+    message: 'Dear Customer, your SBI account will be blocked. Complete KYC immediately by sending Rs 9,999 to 9876543210@ybl or click http://sbi-kyc-update.xyz. Call 8765432109 for help. — SBI Bank'
+  },
+  {
+    label: '📱 QR Scam',
+    message: 'Hi I want to buy your sofa from OLX for Rs 15,000. I am sending you money via UPI. Please scan this QR code to RECEIVE the payment. My UPI: buyer88@axl. Contact me: 7654321098'
+  },
+  {
+    label: '🔢 OTP Fraud',
+    message: 'ALERT: Unauthorized transaction of Rs 49,999 detected from your account to fraudster@paytm. Share your OTP immediately to block this transfer. Call 9988776655 urgently. — RBI Fraud Dept'
+  },
+  {
+    label: '💼 Job Scam',
+    message: 'Congrats! Selected for work-from-home YouTube video liking job. Earn Rs 5000-50000 daily! Pay registration fee Rs 5,000 to jobs.hr@ybl. WhatsApp 8899776655 for joining. Limited seats!'
+  },
+  {
+    label: '🏆 Lottery Scam',
+    message: 'You won Rs 25,00,000 in Jio KBC lottery! To claim send processing fee Rs 10,000 to lottery.claim@paytm. A/C: 12345678901234. Contact: 9123456789. Offer valid 24hrs only!'
+  },
+  {
+    label: '✅ Safe Message',
+    message: 'Hi Priya, sending Rs 500 for dinner last night. My UPI: amit@oksbi. Thanks for a great evening!'
+  }
 ];
 
 function App() {
-  const [messages, setMessages] = useState([]);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [sessionId, setSessionId] = useState(generateSessionId());
-  const [stats, setStats] = useState({ scamsDetected: 0, totalMessages: 0 });
-  const [detection, setDetection] = useState({ confidence: 0, status: 'waiting', scamType: '-' });
-  const [intelligence, setIntelligence] = useState({
-    phoneNumbers: [],
-    bankAccounts: [],
-    upiIds: [],
-    phishingLinks: [],
-    suspiciousKeywords: [],
-  });
-  const [agentNotes, setAgentNotes] = useState([]);
-  const [callbackSent, setCallbackSent] = useState(false);
+  const [activeTab, setActiveTab] = useState('scanner');
   const [apiOnline, setApiOnline] = useState(true);
 
-  const chatContainerRef = useRef(null);
+  // Scanner state
+  const [messageInput, setMessageInput] = useState('');
+  const [scanHistory, setScanHistory] = useState([]);
+  const [isScanning, setIsScanning] = useState(false);
 
-  // Generate unique session ID
-  function generateSessionId() {
-    return 'session-' + Math.random().toString(36).substring(2, 11);
-  }
+  // Alerts state
+  const [alertResult, setAlertResult] = useState(null);
+  const [isGeneratingAlert, setIsGeneratingAlert] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('hi');
+  const [languages, setLanguages] = useState([]);
+  const [selectedScanForAlert, setSelectedScanForAlert] = useState(null);
 
-  // Scroll to bottom of chat
+  // Tips state
+  const [tips, setTips] = useState([]);
+  const [tipCategories, setTipCategories] = useState([]);
+  const [selectedTipCategory, setSelectedTipCategory] = useState(null);
+  const [expandedTip, setExpandedTip] = useState(null);
+
+  const chatEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Check API health
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  // Check API status
-  useEffect(() => {
-    const checkApi = async () => {
+    const check = async () => {
       try {
         const res = await fetch(`${API_URL}/health`);
         setApiOnline(res.ok);
-      } catch {
-        setApiOnline(false);
-      }
+      } catch { setApiOnline(false); }
     };
-    checkApi();
-    const interval = setInterval(checkApi, 30000);
+    check();
+    const interval = setInterval(check, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // Send message to API
-  const sendMessage = async (messageText) => {
-    if (!messageText.trim() || isLoading) return;
+  // Fetch languages & tips on mount
+  useEffect(() => {
+    fetchLanguages();
+    fetchTips();
+  }, []);
 
-    const timestamp = new Date().toISOString();
-    const scammerMessage = {
-      sender: 'scammer',
-      text: messageText,
-      timestamp,
+  // Auto-scroll
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [scanHistory, isScanning]);
+
+  const fetchLanguages = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/upi/languages`);
+      const data = await res.json();
+      if (data.languages) setLanguages(data.languages);
+    } catch (e) { console.error('Fetch languages error:', e); }
+  };
+
+  const fetchTips = async (category = null) => {
+    try {
+      const url = category ? `${API_URL}/api/upi/tips?category=${category}` : `${API_URL}/api/upi/tips`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.tips) setTips(data.tips);
+      if (data.categories) setTipCategories(data.categories);
+    } catch (e) { console.error('Fetch tips error:', e); }
+  };
+
+  // ═══ SCAN MESSAGE ═══
+  const scanMessage = async (text = null) => {
+    const msg = text || messageInput.trim();
+    if (!msg || isScanning) return;
+
+    setMessageInput('');
+    setIsScanning(true);
+
+    // Add user message to history
+    const userEntry = {
+      id: Date.now(),
+      type: 'user',
+      text: msg,
+      timestamp: new Date()
     };
 
-    // Add scammer message to UI
-    setMessages(prev => [...prev, scammerMessage]);
-    setInputText('');
-    setIsLoading(true);
-    setStats(prev => ({ ...prev, totalMessages: prev.totalMessages + 1 }));
+    setScanHistory(prev => [...prev, userEntry]);
 
     try {
-      // Build conversation history
-      const conversationHistory = messages.map(m => ({
-        sender: m.sender,
-        text: m.text,
-        timestamp: m.timestamp,
-      }));
-
-      const response = await fetch(`${API_URL}/api/honeypot`, {
+      const res = await fetch(`${API_URL}/api/upi/scan`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': API_KEY,
-        },
-        body: JSON.stringify({
-          sessionId,
-          message: scammerMessage,
-          conversationHistory,
-          metadata: {
-            channel: 'Web Demo',
-            language: 'English',
-            locale: 'IN',
-          },
-        }),
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({ message: msg })
       });
-
-      const data = await response.json();
+      const data = await res.json();
 
       if (data.status === 'success') {
-        // Add agent response
-        const agentMessage = {
-          sender: 'user',
-          text: data.reply,
-          timestamp: new Date().toISOString(),
+        const resultEntry = {
+          id: Date.now() + 1,
+          type: 'result',
+          extracted: data.extracted,
+          analysis: data.analysis,
+          responseTimeMs: data.responseTimeMs,
+          timestamp: new Date()
         };
-        setMessages(prev => [...prev, agentMessage]);
-        setStats(prev => ({ ...prev, totalMessages: prev.totalMessages + 1 }));
-
-        // Update detection info
-        if (data.debug) {
-          const confidence = data.debug.confidence || 0;
-          setDetection({
-            confidence: Math.round(confidence * 100),
-            status: confidence >= 0.6 ? 'scam' : confidence >= 0.4 ? 'suspicious' : 'safe',
-            scamType: data.debug.scamDetected ? 'Financial Fraud Detected' : 'Analyzing...',
-          });
-
-          if (data.debug.scamDetected) {
-            setStats(prev => ({ ...prev, scamsDetected: 1 }));
-          }
-
-          if (data.debug.callbackSent) {
-            setCallbackSent(true);
-          }
-        }
-
-        // Fetch session for intelligence
-        fetchSessionData();
+        setScanHistory(prev => [...prev, resultEntry]);
+      } else {
+        setScanHistory(prev => [...prev, {
+          id: Date.now() + 1,
+          type: 'error',
+          text: data.message || 'Analysis failed',
+          timestamp: new Date()
+        }]);
       }
-    } catch (error) {
-      console.error('API Error:', error);
-      setApiOnline(false);
+    } catch (e) {
+      setScanHistory(prev => [...prev, {
+        id: Date.now() + 1,
+        type: 'error',
+        text: 'Failed to connect to server',
+        timestamp: new Date()
+      }]);
     } finally {
-      setIsLoading(false);
+      setIsScanning(false);
+      inputRef.current?.focus();
     }
   };
 
-  // Fetch session data for intelligence
-  const fetchSessionData = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/honeypot/session/${sessionId}`, {
-        headers: { 'x-api-key': API_KEY },
-      });
-      const data = await response.json();
-
-      if (data.session) {
-        const intel = data.session.extractedIntelligence || {};
-        setIntelligence({
-          phoneNumbers: intel.phoneNumbers || [],
-          bankAccounts: intel.bankAccounts || [],
-          upiIds: intel.upiIds || [],
-          phishingLinks: intel.phishingLinks || [],
-          suspiciousKeywords: intel.suspiciousKeywords || [],
-        });
-
-        if (data.session.agentNotes) {
-          setAgentNotes(Array.isArray(data.session.agentNotes)
-            ? data.session.agentNotes
-            : [data.session.agentNotes]);
-        }
-      }
-    } catch (error) {
-      console.error('Fetch session error:', error);
-    }
+  // Quick example
+  const handleExample = (ex) => {
+    setMessageInput(ex.message);
+    scanMessage(ex.message);
   };
 
-  // Handle new session
-  const handleNewSession = () => {
-    setSessionId(generateSessionId());
-    setMessages([]);
-    setDetection({ confidence: 0, status: 'waiting', scamType: '-' });
-    setIntelligence({
-      phoneNumbers: [],
-      bankAccounts: [],
-      upiIds: [],
-      phishingLinks: [],
-      suspiciousKeywords: [],
-    });
-    setAgentNotes([]);
-    setCallbackSent(false);
-    setStats({ scamsDetected: 0, totalMessages: 0 });
-  };
-
-  // Clear intelligence
-  const handleClearIntel = () => {
-    setIntelligence({
-      phoneNumbers: [],
-      bankAccounts: [],
-      upiIds: [],
-      phishingLinks: [],
-      suspiciousKeywords: [],
-    });
-  };
-
-  // Handle key press
-  const handleKeyPress = (e) => {
+  // Key handler
+  const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage(inputText);
+      scanMessage();
     }
+  };
+
+  // Generate alert from scan result
+  const generateAlert = async (analysis, lang = selectedLanguage) => {
+    setIsGeneratingAlert(true);
+    setAlertResult(null);
+    try {
+      const res = await fetch(`${API_URL}/api/upi/alert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({ fraudResult: analysis, language: lang })
+      });
+      const data = await res.json();
+      if (data.alert) setAlertResult(data.alert);
+    } catch (e) { console.error('Alert error:', e); }
+    finally { setIsGeneratingAlert(false); }
+  };
+
+  const handleLanguageChange = (code) => {
+    setSelectedLanguage(code);
+    if (selectedScanForAlert) generateAlert(selectedScanForAlert, code);
+  };
+
+  const openAlertForScan = (analysis) => {
+    setSelectedScanForAlert(analysis);
+    setActiveTab('alerts');
+    generateAlert(analysis);
+  };
+
+  // Category filter
+  const handleCategoryFilter = (cat) => {
+    const newCat = cat === selectedTipCategory ? null : cat;
+    setSelectedTipCategory(newCat);
+    fetchTips(newCat);
+  };
+
+  // Clear history
+  const clearHistory = () => {
+    setScanHistory([]);
   };
 
   return (
     <div className="app">
-      {/* Animated Background */}
-      <div className="bg-grid"></div>
-      <div className="bg-glow"></div>
+      {/* Background Effects */}
+      <div className="bg-orbs">
+        <div className="orb orb-1"></div>
+        <div className="orb orb-2"></div>
+        <div className="orb orb-3"></div>
+      </div>
 
       {/* Header */}
       <header className="header">
         <div className="logo">
-          <span className="logo-icon">🍯</span>
+          <div className="logo-shield">🛡️</div>
           <div className="logo-text">
-            <h1>Agentic Honey-Pot</h1>
-            <span className="tagline">AI-Powered Scam Detection & Intelligence Extraction</span>
+            <h1>UPI Fraud Shield</h1>
+            <span className="tagline">Paste any suspicious message • AI auto-detects fraud</span>
           </div>
         </div>
-        <div className="header-stats">
-          <div className="stat-badge">
-            <span className="stat-icon">🛡️</span>
-            <span>{stats.scamsDetected}</span>
-            <span className="stat-label">Scams Detected</span>
-          </div>
-          <div className="stat-badge">
-            <span className="stat-icon">💬</span>
-            <span>{stats.totalMessages}</span>
-            <span className="stat-label">Messages</span>
-          </div>
-          <div className={`stat-badge status-badge ${!apiOnline ? 'offline' : ''}`}>
+        <div className="header-right">
+          <div className={`status-pill ${apiOnline ? 'online' : 'offline'}`}>
             <span className="status-dot"></span>
-            <span>{apiOnline ? 'API Online' : 'API Offline'}</span>
+            <span>{apiOnline ? 'AI Engine Online' : 'Offline'}</span>
           </div>
         </div>
       </header>
 
+      {/* Nav Tabs */}
+      <nav className="nav-tabs">
+        <button className={`nav-tab ${activeTab === 'scanner' ? 'active' : ''}`} onClick={() => setActiveTab('scanner')}>
+          <span className="tab-icon">🔍</span>
+          <span>Message Scanner</span>
+        </button>
+        <button className={`nav-tab ${activeTab === 'alerts' ? 'active' : ''}`} onClick={() => setActiveTab('alerts')}>
+          <span className="tab-icon">🌐</span>
+          <span>Regional Alerts</span>
+        </button>
+        <button className={`nav-tab ${activeTab === 'tips' ? 'active' : ''}`} onClick={() => setActiveTab('tips')}>
+          <span className="tab-icon">📚</span>
+          <span>Safety Tips</span>
+        </button>
+      </nav>
+
       {/* Main Content */}
       <main className="main-content">
-        {/* Chat Panel */}
-        <section className="chat-panel">
-          <div className="panel-header">
-            <h2>💬 Conversation Simulator</h2>
-            <p>Test the honeypot with simulated scam messages</p>
-          </div>
 
-          {/* Chat Messages */}
-          <div className="chat-container" ref={chatContainerRef}>
-            {messages.length === 0 ? (
-              <div className="chat-welcome">
-                <div className="welcome-icon">🎭</div>
-                <h3>Simulate a Scam Conversation</h3>
-                <p>Send a message as a "scammer" and watch the AI agent respond with a believable persona while extracting intelligence.</p>
+        {/* ═══ TAB: Message Scanner ═══ */}
+        {activeTab === 'scanner' && (
+          <div className="scanner-layout">
+            {/* Chat Feed */}
+            <section className="chat-feed glass-card">
+              <div className="chat-top-bar">
+                <h2>📨 Message Scanner</h2>
+                {scanHistory.length > 0 && (
+                  <button className="clear-btn" onClick={clearHistory}>🗑️ Clear</button>
+                )}
               </div>
-            ) : (
-              messages.map((msg, index) => (
-                <div key={index} className={`message ${msg.sender}`}>
-                  <div className="message-bubble">
-                    <div className="message-sender">
-                      {msg.sender === 'scammer' ? '🦹 You (Scammer)' : '🤖 AI Agent (Victim)'}
-                    </div>
-                    <div className="message-text">{msg.text}</div>
-                    <div className="message-time">
-                      {new Date(msg.timestamp).toLocaleTimeString()}
+
+              <div className="chat-messages">
+                {scanHistory.length === 0 && (
+                  <div className="welcome-state">
+                    <div className="welcome-icon">🛡️</div>
+                    <h3>Paste a Suspicious UPI Message</h3>
+                    <p>The AI will automatically extract UPI IDs, phone numbers, amounts, links, and analyze the fraud risk.</p>
+
+                    {/* Example Messages */}
+                    <div className="example-grid">
+                      {EXAMPLE_MESSAGES.map((ex, i) => (
+                        <button
+                          key={i}
+                          className="example-btn"
+                          onClick={() => handleExample(ex)}
+                        >
+                          <span className="ex-label">{ex.label}</span>
+                          <span className="ex-preview">{ex.message.substring(0, 70)}...</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                </div>
-              ))
-            )}
-            {isLoading && (
-              <div className="typing-indicator">
-                <span>AI Agent is typing</span>
-                <div className="typing-dots">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-              </div>
-            )}
-          </div>
+                )}
 
-          {/* Message Input */}
-          <div className="chat-input-area">
-            <div className="quick-messages">
-              <span className="quick-label">Quick examples:</span>
-              {QUICK_MESSAGES.map((qm, index) => (
+                {scanHistory.map((entry) => (
+                  <div key={entry.id} className={`chat-entry entry-${entry.type}`}>
+                    {entry.type === 'user' && (
+                      <div className="user-bubble">
+                        <div className="bubble-label">📩 Suspicious Message</div>
+                        <p>{entry.text}</p>
+                      </div>
+                    )}
+
+                    {entry.type === 'result' && (
+                      <div className="result-bubble">
+                        {/* Risk Score Header */}
+                        <div className={`result-risk risk-${entry.analysis.riskLevel.toLowerCase()}`}>
+                          <div className="risk-score-big">
+                            <span className="score-number">{entry.analysis.riskScore}</span>
+                            <span className="score-max">/100</span>
+                          </div>
+                          <div className="risk-info">
+                            <div className={`risk-badge ${entry.analysis.riskLevel.toLowerCase()}`}>
+                              <span>{entry.analysis.riskEmoji}</span>
+                              <span>{entry.analysis.riskLevel} RISK</span>
+                            </div>
+                            {entry.analysis.fraudCategory && (
+                              <div className="fraud-type">
+                                {entry.analysis.fraudCategory.icon} {entry.analysis.fraudCategory.name}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Extracted Details */}
+                        <div className="extracted-section">
+                          <h4>🔎 Auto-Extracted Details</h4>
+                          <div className="extracted-grid">
+                            {entry.extracted.allUpiIds?.length > 0 && (
+                              <div className="ext-item">
+                                <span className="ext-label">UPI IDs</span>
+                                <div className="ext-values">
+                                  {entry.extracted.allUpiIds.map((id, i) => (
+                                    <span key={i} className="ext-tag upi">{id}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {entry.extracted.phoneNumbers?.length > 0 && (
+                              <div className="ext-item">
+                                <span className="ext-label">Phone Numbers</span>
+                                <div className="ext-values">
+                                  {entry.extracted.phoneNumbers.map((ph, i) => (
+                                    <span key={i} className="ext-tag phone">{ph}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {entry.extracted.amount && (
+                              <div className="ext-item">
+                                <span className="ext-label">Amount</span>
+                                <span className="ext-tag amount">₹{entry.extracted.amount.toLocaleString('en-IN')}</span>
+                              </div>
+                            )}
+                            {entry.extracted.links?.length > 0 && (
+                              <div className="ext-item">
+                                <span className="ext-label">Suspicious Links</span>
+                                <div className="ext-values">
+                                  {entry.extracted.links.map((l, i) => (
+                                    <span key={i} className="ext-tag link">⚠️ {l}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {entry.extracted.bankAccounts?.length > 0 && (
+                              <div className="ext-item">
+                                <span className="ext-label">Bank Accounts</span>
+                                <div className="ext-values">
+                                  {entry.extracted.bankAccounts.map((acc, i) => (
+                                    <span key={i} className="ext-tag bank">{acc}</span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {entry.extracted.scamType && (
+                              <div className="ext-item">
+                                <span className="ext-label">Scam Type</span>
+                                <span className="ext-tag scam">{entry.extracted.scamType.replace('_', ' ')}</span>
+                              </div>
+                            )}
+                            {entry.extracted.source && entry.extracted.source !== 'UNKNOWN' && (
+                              <div className="ext-item">
+                                <span className="ext-label">Source</span>
+                                <span className="ext-tag source">{entry.extracted.source}</span>
+                              </div>
+                            )}
+                            {entry.extracted.aiExtracted && (
+                              <div className="ai-extracted-badge">🤖 AI-Extracted</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Fraud Indicators from extraction */}
+                        {entry.extracted.fraudIndicators?.length > 0 && (
+                          <div className="fraud-indicators-section">
+                            <h4>🚩 Fraud Indicators</h4>
+                            <ul>
+                              {entry.extracted.fraudIndicators.map((fi, i) => (
+                                <li key={i}>{fi}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Risk Indicators from analysis */}
+                        {entry.analysis.indicators?.length > 0 && (
+                          <div className="risk-indicators-section">
+                            <h4>⚠️ Risk Signals</h4>
+                            <div className="indicator-chips">
+                              {entry.analysis.indicators.map((ind, i) => (
+                                <span key={i} className={`ind-chip sev-${(ind.severity || 'low').toLowerCase()}`}>
+                                  {ind.label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Reasoning */}
+                        {entry.analysis.reasoning && (
+                          <div className="reasoning-section">
+                            <p>{entry.analysis.reasoning}</p>
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        {entry.analysis.recommendedActions?.length > 0 && (
+                          <div className="actions-section">
+                            <h4>📋 What You Should Do</h4>
+                            <ul>
+                              {entry.analysis.recommendedActions.map((a, i) => (
+                                <li key={i}>{a}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Footer Buttons */}
+                        <div className="result-footer">
+                          <button className="alert-link-btn" onClick={() => openAlertForScan(entry.analysis)}>
+                            🌐 Get Alert in Regional Language
+                          </button>
+                          <span className="response-time">{entry.responseTimeMs}ms</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {entry.type === 'error' && (
+                      <div className="error-bubble">
+                        <span>❌</span>
+                        <span>{entry.text}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {isScanning && (
+                  <div className="scanning-indicator">
+                    <div className="scan-dots">
+                      <span></span><span></span><span></span>
+                    </div>
+                    <span>AI is analyzing the message...</span>
+                  </div>
+                )}
+
+                <div ref={chatEndRef}></div>
+              </div>
+
+              {/* Input Area */}
+              <div className="chat-input-area">
+                <textarea
+                  ref={inputRef}
+                  className="message-input"
+                  placeholder="Paste a suspicious UPI message here... (e.g., SMS, WhatsApp, email)"
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  rows={2}
+                  disabled={isScanning}
+                />
                 <button
-                  key={index}
-                  className="quick-btn"
-                  onClick={() => sendMessage(qm.message)}
-                  disabled={isLoading}
+                  className="scan-btn"
+                  onClick={() => scanMessage()}
+                  disabled={!messageInput.trim() || isScanning}
                 >
-                  {qm.label}
+                  {isScanning ? (
+                    <span className="spinner"></span>
+                  ) : (
+                    <span>🔍</span>
+                  )}
                 </button>
-              ))}
-            </div>
-            <div className="input-wrapper">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Type a scam message to test..."
-                disabled={isLoading}
-              />
-              <button
-                className="send-btn"
-                onClick={() => sendMessage(inputText)}
-                disabled={isLoading || !inputText.trim()}
-              >
-                <span>Send</span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" />
-                </svg>
-              </button>
-            </div>
+              </div>
+            </section>
           </div>
-        </section>
+        )}
 
-        {/* Intelligence Dashboard */}
-        <section className="intel-panel">
-          {/* Detection Card */}
-          <div className="detection-card">
-            <div className="card-header">
-              <h3>🎯 Scam Detection</h3>
-              <span className={`detection-status ${detection.status}`}>
-                {detection.status === 'scam' ? '⚠️ SCAM' :
-                  detection.status === 'suspicious' ? '🔍 Suspicious' :
-                    detection.status === 'safe' ? '✅ Safe' : '⏳ Waiting'}
-              </span>
-            </div>
-            <div className="confidence-meter">
-              <div className="meter-track">
-                <div
-                  className={`meter-fill ${detection.confidence > 60 ? 'danger' : ''}`}
-                  style={{ width: `${detection.confidence}%` }}
-                ></div>
+        {/* ═══ TAB: Regional Alerts ═══ */}
+        {activeTab === 'alerts' && (
+          <div className="alerts-layout">
+            <div className="alerts-top glass-card">
+              <div className="card-title">
+                <span className="card-icon">🌐</span>
+                <h2>Regional Language Fraud Alerts</h2>
               </div>
-              <div className="meter-labels">
-                <span>0%</span>
-                <span>Safe</span>
-                <span>Suspicious</span>
-                <span>Scam</span>
-                <span>100%</span>
-              </div>
-            </div>
-            <div className="scam-type">{detection.scamType}</div>
-          </div>
+              <p className="card-desc">Fraud alerts translated into Indian regional languages using AI. Scan a message first, then select a language.</p>
 
-          {/* Intelligence Card */}
-          <div className="intel-card">
-            <div className="card-header">
-              <h3>🔍 Extracted Intelligence</h3>
-              <button className="clear-btn" onClick={handleClearIntel}>Clear</button>
-            </div>
-            <div className="intel-grid">
-              <div className="intel-item">
-                <div className="intel-icon">📱</div>
-                <div className="intel-label">Phone Numbers</div>
-                <div className="intel-values">
-                  {intelligence.phoneNumbers.length > 0
-                    ? intelligence.phoneNumbers.join(', ')
-                    : '-'}
-                </div>
+              {/* Language Selector */}
+              <div className="language-selector">
+                {languages.map((lang) => (
+                  <button
+                    key={lang.code}
+                    className={`lang-btn ${selectedLanguage === lang.code ? 'active' : ''}`}
+                    onClick={() => handleLanguageChange(lang.code)}
+                  >
+                    <span className="lang-flag">{lang.flag}</span>
+                    <span className="lang-native">{lang.nativeName}</span>
+                    <span className="lang-name">{lang.name}</span>
+                  </button>
+                ))}
               </div>
-              <div className="intel-item">
-                <div className="intel-icon">🏦</div>
-                <div className="intel-label">Bank Accounts</div>
-                <div className="intel-values">
-                  {intelligence.bankAccounts.length > 0
-                    ? intelligence.bankAccounts.join(', ')
-                    : '-'}
-                </div>
-              </div>
-              <div className="intel-item">
-                <div className="intel-icon">💳</div>
-                <div className="intel-label">UPI IDs</div>
-                <div className="intel-values">
-                  {intelligence.upiIds.length > 0
-                    ? intelligence.upiIds.join(', ')
-                    : '-'}
-                </div>
-              </div>
-              <div className="intel-item">
-                <div className="intel-icon">🔗</div>
-                <div className="intel-label">Phishing Links</div>
-                <div className="intel-values">
-                  {intelligence.phishingLinks.length > 0
-                    ? intelligence.phishingLinks.join(', ')
-                    : '-'}
-                </div>
-              </div>
-              <div className="intel-item full-width">
-                <div className="intel-icon">⚠️</div>
-                <div className="intel-label">Suspicious Keywords</div>
-                <div className="intel-tags">
-                  {intelligence.suspiciousKeywords.length > 0
-                    ? intelligence.suspiciousKeywords.map((kw, i) => (
-                      <span key={i} className="intel-tag">{kw}</span>
-                    ))
-                    : <span style={{ color: 'var(--text-muted)' }}>-</span>}
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Agent Notes */}
-          <div className="notes-card">
-            <div className="card-header">
-              <h3>🤖 Agent Notes</h3>
-            </div>
-            <div className="notes-list">
-              {agentNotes.length > 0 ? (
-                agentNotes.map((note, index) => (
-                  <div key={index} className="note-item">{note}</div>
-                ))
-              ) : (
-                <div className="note-empty">Agent observations will appear here...</div>
+              {!selectedScanForAlert && (
+                <div className="alert-empty">
+                  <p>⚡ Scan a suspicious message first, then click "Get Alert in Regional Language".</p>
+                  <button className="nav-link-btn" onClick={() => setActiveTab('scanner')}>Go to Scanner →</button>
+                </div>
+              )}
+
+              {isGeneratingAlert && (
+                <div className="alert-loading">
+                  <span className="spinner"></span>
+                  <span>Generating alert in {languages.find(l => l.code === selectedLanguage)?.nativeName}...</span>
+                </div>
               )}
             </div>
-          </div>
 
-          {/* Session Card */}
-          <div className="session-card">
-            <div className="card-header">
-              <h3>📊 Session Info</h3>
-              <button className="new-session-btn" onClick={handleNewSession}>
-                New Session
-              </button>
+            {alertResult && (
+              <div className={`alert-display glass-card risk-border-${selectedScanForAlert?.riskLevel?.toLowerCase() || 'medium'}`}>
+                <div className="alert-header">
+                  <div className="alert-lang-badge">
+                    <span>{alertResult.language?.flag}</span>
+                    <span>{alertResult.language?.nativeName}</span>
+                  </div>
+                  {alertResult.riskScore !== undefined && (
+                    <div className={`risk-badge ${alertResult.riskLevel?.toLowerCase()}`}>
+                      Risk: {alertResult.riskScore}/100
+                    </div>
+                  )}
+                </div>
+                <h2 className="alert-title">{alertResult.title}</h2>
+                <p className="alert-body">{alertResult.body}</p>
+
+                {alertResult.actions?.length > 0 && (
+                  <div className="alert-actions">
+                    <h4>🔒 Actions:</h4>
+                    <ul>
+                      {alertResult.actions.map((a, i) => <li key={i}>{a}</li>)}
+                    </ul>
+                  </div>
+                )}
+
+                {alertResult.emergency && (
+                  <div className="alert-emergency">
+                    <span>🚨</span>
+                    <span>{alertResult.emergency}</span>
+                  </div>
+                )}
+
+                {alertResult.source && (
+                  <div className="alert-source">
+                    Generated via: {alertResult.source === 'ai' ? '🤖 Gemini AI' : '📄 Static Translation'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ═══ TAB: Safety Tips ═══ */}
+        {activeTab === 'tips' && (
+          <div className="tips-layout">
+            <div className="tips-header glass-card">
+              <div className="card-title">
+                <span className="card-icon">📚</span>
+                <h2>UPI Safety Education Hub</h2>
+              </div>
+              <p className="card-desc">Learn how to protect yourself from UPI fraud with real examples and actionable advice.</p>
+
+              <div className="tip-categories">
+                <button
+                  className={`cat-btn ${!selectedTipCategory ? 'active' : ''}`}
+                  onClick={() => handleCategoryFilter(null)}
+                >
+                  All Tips
+                </button>
+                {tipCategories.map((cat) => (
+                  <button
+                    key={cat.key}
+                    className={`cat-btn ${selectedTipCategory === cat.key ? 'active' : ''}`}
+                    onClick={() => handleCategoryFilter(cat.key)}
+                  >
+                    <span>{cat.icon}</span>
+                    <span>{cat.name}</span>
+                    <span className="cat-count">{cat.count}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="session-details">
-              <div className="session-item">
-                <span>Session ID:</span>
-                <code>{sessionId.substring(0, 16)}...</code>
-              </div>
-              <div className="session-item">
-                <span>Messages:</span>
-                <strong>{messages.length}</strong>
-              </div>
-              <div className="session-item">
-                <span>Callback Status:</span>
-                <span className={`callback-status ${callbackSent ? 'sent' : 'pending'}`}>
-                  {callbackSent ? '✅ Sent' : '⏳ Pending'}
-                </span>
-              </div>
+
+            <div className="tips-grid">
+              {tips.map((tip) => (
+                <div
+                  key={tip.id}
+                  className={`tip-card glass-card ${expandedTip === tip.id ? 'expanded' : ''}`}
+                  onClick={() => setExpandedTip(expandedTip === tip.id ? null : tip.id)}
+                >
+                  <div className="tip-header-row">
+                    <span className="tip-icon">{tip.icon}</span>
+                    <div>
+                      <h3>{tip.title}</h3>
+                      <span className="tip-category">{tip.category.replace('_', ' ')}</span>
+                    </div>
+                  </div>
+                  <p className="tip-desc">{tip.description}</p>
+
+                  {expandedTip === tip.id && (
+                    <div className="tip-details">
+                      <div className="tip-dos">
+                        <h4>✅ Do's</h4>
+                        <ul>
+                          {tip.dos?.map((d, i) => <li key={i}>{d}</li>)}
+                        </ul>
+                      </div>
+                      <div className="tip-donts">
+                        <h4>❌ Don'ts</h4>
+                        <ul>
+                          {tip.donts?.map((d, i) => <li key={i}>{d}</li>)}
+                        </ul>
+                      </div>
+                      {tip.example && (
+                        <div className="tip-example">
+                          <h4>📖 Real Example</h4>
+                          <p>{tip.example}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="tip-expand-hint">
+                    {expandedTip === tip.id ? '▲ Collapse' : '▼ Read more'}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        </section>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="footer">
-        <div className="tech-stack">
+        <div className="footer-left">
           <span>Built with</span>
           <span className="tech-tag">React</span>
           <span className="tech-tag">Node.js</span>
-          <span className="tech-tag">Perplexity AI</span>
+          <span className="tech-tag">Gemini AI</span>
         </div>
-        <div className="footer-links">
-          <span>GUVI Hackathon 2026</span>
+        <div className="footer-right">
+          <span>🚨 Emergency: Call <strong>1930</strong> (Cyber Crime Helpline)</span>
         </div>
       </footer>
     </div>
