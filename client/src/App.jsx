@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import ScammerChat from './ScammerChat';
+import VictimChat from './VictimChat';
 import './App.css';
 
 // API Configuration
@@ -55,8 +57,28 @@ function App() {
   const [selectedTipCategory, setSelectedTipCategory] = useState(null);
   const [expandedTip, setExpandedTip] = useState(null);
 
+  // QR Scanner state
+  const [qrFile, setQrFile] = useState(null);
+  const [qrPreviewUrl, setQrPreviewUrl] = useState(null);
+  const [qrResult, setQrResult] = useState(null);
+  const [qrError, setQrError] = useState('');
+  const [isQrScanning, setIsQrScanning] = useState(false);
+
+  // Active defense shared session id (used in /scammer and /victim links)
+  const [chatSessionId, setChatSessionId] = useState(() => {
+    return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  });
+
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  const path = window.location.pathname;
+  if (path === '/scammer') {
+    return <ScammerChat apiUrl={API_URL} apiKey={API_KEY} />;
+  }
+  if (path === '/victim') {
+    return <VictimChat apiUrl={API_URL} apiKey={API_KEY} />;
+  }
 
   // Check API health
   useEffect(() => {
@@ -210,6 +232,70 @@ function App() {
     setScanHistory([]);
   };
 
+  // ═══ QR SCANNER ═══
+  const handleQrFileChange = (event) => {
+    const file = event.target.files?.[0];
+    setQrError('');
+    setQrResult(null);
+
+    if (!file) {
+      setQrFile(null);
+      if (qrPreviewUrl) URL.revokeObjectURL(qrPreviewUrl);
+      setQrPreviewUrl(null);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setQrError('Please select a valid image file (JPG/PNG/WebP).');
+      setQrFile(null);
+      if (qrPreviewUrl) URL.revokeObjectURL(qrPreviewUrl);
+      setQrPreviewUrl(null);
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setQrError('Image too large. Maximum allowed size is 5MB.');
+      setQrFile(null);
+      if (qrPreviewUrl) URL.revokeObjectURL(qrPreviewUrl);
+      setQrPreviewUrl(null);
+      return;
+    }
+
+    setQrFile(file);
+    if (qrPreviewUrl) URL.revokeObjectURL(qrPreviewUrl);
+    setQrPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const scanQrImage = async () => {
+    if (!qrFile || isQrScanning) return;
+    setIsQrScanning(true);
+    setQrError('');
+    setQrResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('qrImage', qrFile);
+
+      const res = await fetch(`${API_URL}/api/upi/scan-qr`, {
+        method: 'POST',
+        headers: { 'x-api-key': API_KEY },
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        setQrError(data.message || 'Failed to scan QR. Try a clearer image.');
+        return;
+      }
+      setQrResult(data);
+    } catch (e) {
+      console.error('QR scan error:', e);
+      setQrError('Failed to connect to server');
+    } finally {
+      setIsQrScanning(false);
+    }
+  };
+
   return (
     <div className="app">
       {/* Background Effects */}
@@ -241,6 +327,14 @@ function App() {
         <button className={`nav-tab ${activeTab === 'scanner' ? 'active' : ''}`} onClick={() => setActiveTab('scanner')}>
           <span className="tab-icon">🔍</span>
           <span>Message Scanner</span>
+        </button>
+        <button className={`nav-tab ${activeTab === 'defense' ? 'active' : ''}`} onClick={() => setActiveTab('defense')}>
+          <span className="tab-icon">🛡️</span>
+          <span>Active Defense Chat</span>
+        </button>
+        <button className={`nav-tab ${activeTab === 'qr' ? 'active' : ''}`} onClick={() => setActiveTab('qr')}>
+          <span className="tab-icon">📷</span>
+          <span>QR Scanner</span>
         </button>
         <button className={`nav-tab ${activeTab === 'alerts' ? 'active' : ''}`} onClick={() => setActiveTab('alerts')}>
           <span className="tab-icon">🌐</span>
@@ -489,6 +583,160 @@ function App() {
                 </button>
               </div>
             </section>
+          </div>
+        )}
+
+        {/* ═══ TAB: Active Defense ═══ */}
+        {activeTab === 'defense' && (
+          <div className="defense-layout">
+            <div className="tips-header glass-card">
+              <div className="card-title">
+                <span className="card-icon">🛡️</span>
+                <h2>Active Defense Chat Mode</h2>
+              </div>
+              <p className="card-desc">
+                Simulate a live fraud conversation. Use the scammer view to send messages and the victim view
+                to see real-time risk scores, reasoning, and automated defensive replies.
+              </p>
+
+              <div className="defense-actions">
+                <a
+                  href={`/scammer?session=${encodeURIComponent(chatSessionId)}`}
+                  className="nav-link-btn"
+                >
+                  Open Scammer View
+                </a>
+                <a
+                  href={`/victim?session=${encodeURIComponent(chatSessionId)}`}
+                  className="nav-link-btn"
+                >
+                  Open Victim View
+                </a>
+                <button
+                  type="button"
+                  className="nav-link-btn"
+                  onClick={() =>
+                    setChatSessionId(
+                      `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+                    )
+                  }
+                >
+                  Start New Session
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ═══ TAB: QR Scanner ═══ */}
+        {activeTab === 'qr' && (
+          <div className="qr-layout">
+            <div className="qr-card glass-card">
+              <div className="card-title">
+                <span className="card-icon">📷</span>
+                <h2>QR Code Scam Scanner</h2>
+              </div>
+              <p className="card-desc">
+                Upload a UPI payment QR image. We’ll extract the embedded payment intent (UPI ID / amount) and flag suspicious patterns.
+              </p>
+
+              <div className="qr-upload-row">
+                <label className="qr-file">
+                  <input type="file" accept="image/*" onChange={handleQrFileChange} />
+                  <span>{qrFile ? qrFile.name : 'Choose QR image'}</span>
+                </label>
+
+                <button
+                  className="qr-scan-btn"
+                  onClick={scanQrImage}
+                  disabled={!qrFile || isQrScanning}
+                >
+                  {isQrScanning ? <span className="spinner"></span> : <span>Scan</span>}
+                </button>
+              </div>
+
+              {qrError && (
+                <div className="qr-error">
+                  <span>❌</span>
+                  <span>{qrError}</span>
+                </div>
+              )}
+
+              {qrPreviewUrl && (
+                <div className="qr-preview">
+                  <img src={qrPreviewUrl} alt="QR preview" />
+                </div>
+              )}
+            </div>
+
+            {qrResult?.analysis && (
+              <div className="qr-result glass-card">
+                <div className="qr-result-top">
+                  <div className={`risk-badge ${qrResult.analysis.riskLevel.toLowerCase()}`}>
+                    <span>{qrResult.analysis.riskEmoji}</span>
+                    <span>{qrResult.analysis.riskLevel} RISK</span>
+                  </div>
+                  <div className="qr-score">
+                    <span className="score-number">{qrResult.analysis.riskScore}</span>
+                    <span className="score-max">/100</span>
+                  </div>
+                </div>
+
+                {['HIGH', 'CRITICAL'].includes(qrResult.analysis.riskLevel) && (
+                  <div className="qr-banner">
+                    🚨 This QR will SEND money. QR codes cannot receive money.
+                  </div>
+                )}
+
+                <div className="extracted-section">
+                  <h4>🔎 Extracted UPI Payment Details</h4>
+                  <div className="extracted-grid">
+                    <div className="ext-item">
+                      <span className="ext-label">UPI ID</span>
+                      <span className="ext-tag upi">{qrResult.extracted?.upiId || '-'}</span>
+                    </div>
+                    <div className="ext-item">
+                      <span className="ext-label">Merchant Name</span>
+                      <span className="ext-tag source">{qrResult.extracted?.merchantName || '-'}</span>
+                    </div>
+                    <div className="ext-item">
+                      <span className="ext-label">Amount</span>
+                      <span className="ext-tag amount">
+                        {qrResult.extracted?.amount ? `₹${Number(qrResult.extracted.amount).toLocaleString('en-IN')}` : '-'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {qrResult.analysis.warnings?.length > 0 && (
+                  <div className="fraud-indicators-section">
+                    <h4>🚩 Warnings</h4>
+                    <ul>
+                      {qrResult.analysis.warnings.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {qrResult.analysis.recommendedActions?.length > 0 && (
+                  <div className="actions-section">
+                    <h4>📋 What You Should Do</h4>
+                    <ul>
+                      {qrResult.analysis.recommendedActions.map((a, i) => (
+                        <li key={i}>{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {qrResult.analysis.reasoning && (
+                  <div className="reasoning-section">
+                    <p>{qrResult.analysis.reasoning}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

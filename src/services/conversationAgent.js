@@ -78,66 +78,66 @@ function selectPersona(messageCount, scamType) {
 async function generateAIResponse(scammerMessage, conversationHistory, scamType, messageCount) {
     initializeAI();
 
-    if (!gemini) {
-        // Fallback to template responses
-        const persona = selectPersona(messageCount, scamType);
-        return getPersonaResponse(persona);
-    }
+    const fallbackLong =
+        "I'm not sure I understand. Can you explain more clearly why I need to do this? I will only proceed through my bank’s official app or helpline.";
 
     try {
-        const historyContext = conversationHistory.map(m =>
-            `${m.sender === 'scammer' ? 'Scammer' : 'You'}: ${m.text}`
-        ).join('\n');
+        // If Gemini is unavailable, use a safer long fallback.
+        if (!gemini) {
+            const persona = selectPersona(messageCount, scamType);
+            const candidate = getPersonaResponse(persona) || '';
+            return candidate.length < 20 ? fallbackLong : candidate;
+        }
 
-        const systemPrompt = `You are playing the role of an ordinary Indian citizen who has received a suspicious message. Your goal is to:
-1. Act like a believable, slightly confused but cooperative victim
-2. Keep the scammer engaged in conversation
-3. Gradually ask for more details to extract information
-4. NEVER reveal that you know it's a scam
-5. Use natural, conversational Indian English
-6. Sometimes make typos or use informal language
-7. Respond in 1-2 sentences maximum, keep it SHORT and natural`;
+        const prompt = `
+You are an intelligent fraud honeypot pretending to be a real human victim.
 
-        const userPrompt = `Context:
-- This is a ${scamType} scam attempt
-- You've exchanged ${messageCount} messages so far
-- You should appear increasingly engaged but occasionally hesitant
+Rules:
+- Never give short replies like "Arre" or "Okay".
+- Always respond with 2-4 full sentences.
+- If scam looks suspicious, act confused but cautious.
+- Ask follow-up questions.
+- Do NOT confirm payment.
+- Do NOT reveal awareness of being a bot.
+- Sound natural and slightly worried.
+- Keep tone realistic.
 
-Conversation so far:
-${historyContext}
+If message contains:
+- Lottery → ask how you won.
+- KYC → ask why bank cannot update directly.
+- OTP → refuse to share.
+- Payment request → question legitimacy.
 
-Scammer's latest message: "${scammerMessage}"
+Message from scammer:
+"${scammerMessage}"
 
-Guidelines for your response:
-${messageCount <= 2 ? '- Act confused and ask what this is about' : ''}
-${messageCount > 2 && messageCount <= 5 ? '- Show concern and ask for clarification' : ''}
-${messageCount > 5 && messageCount <= 8 ? '- Ask for their identity/credentials/reference number' : ''}
-${messageCount > 8 ? '- Pretend to look for information, stall for time, ask specific questions about their claims' : ''}
-
-Generate a SHORT (1-2 sentences max) natural response. Do NOT use quotation marks. Do NOT include any system text or explanations.`;
+Generate a realistic human response.
+`.trim();
 
         const response = await gemini.chat.completions.create({
             model: config.geminiModel,
             messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userPrompt }
+                { role: 'system', content: 'You are a fraud honeypot. Respond like a real human victim. Output only the reply text.' },
+                { role: 'user', content: prompt }
             ],
-            max_tokens: 100,
-            temperature: 0.7
+            max_tokens: 220,
+            temperature: 0.6
         });
 
         let text = response.choices[0]?.message?.content?.trim() || '';
+        text = text.replace(/^["']|["']$/g, '');
+        text = text.replace(/^(Response:|Reply:|You:|User:)\s*/i, '');
 
-        // Clean up response
-        text = text.replace(/^["']|["']$/g, ''); // Remove surrounding quotes
-        text = text.replace(/^(Response:|Reply:|You:|User:)\s*/i, ''); // Remove prefixes
+        if (text.length < 20) {
+            text = fallbackLong;
+        }
 
-        return text || getPersonaResponse(selectPersona(messageCount, scamType));
+        return text;
     } catch (error) {
         console.error('AI response generation error:', error.message);
-        // Fallback to template
         const persona = selectPersona(messageCount, scamType);
-        return getPersonaResponse(persona);
+        const candidate = getPersonaResponse(persona) || '';
+        return candidate.length < 20 ? fallbackLong : candidate;
     }
 }
 

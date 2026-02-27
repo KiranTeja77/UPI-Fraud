@@ -1,11 +1,26 @@
 import express from 'express';
+import multer from 'multer';
 import { authenticateApiKey } from '../middleware/auth.js';
 import { analyzeTransaction } from '../services/upiTransactionAnalyzer.js';
 import { extractTransactionFromMessage } from '../services/messageExtractor.js';
 import { generateAlert, getSupportedLanguages } from '../services/regionalAlertService.js';
 import { getTips, getContextualTips } from '../services/safetyTipsService.js';
+import { decodeQrFromBuffer } from '../services/qrDecoderService.js';
+import { analyzeUpiQr } from '../services/qrAnalyzerService.js';
 
 const router = express.Router();
+
+// QR image upload (memory) with safety limits
+const qrUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter: (req, file, cb) => {
+        if (!file?.mimetype?.startsWith('image/')) {
+            return cb(new Error('Only image uploads are allowed'));
+        }
+        cb(null, true);
+    }
+});
 
 /**
  * POST /api/upi/scan
@@ -78,6 +93,65 @@ router.post('/scan', authenticateApiKey, async (req, res) => {
             message: 'Failed to scan message'
         });
     }
+});
+
+/**
+ * POST /api/upi/scan-qr
+ * Upload a QR image, decode UPI payment data, and analyze scam risk
+ *
+ * Multipart/form-data
+ * Field: qrImage
+ * Header: x-api-key
+ */
+router.post('/scan-qr', authenticateApiKey, (req, res) => {
+    qrUpload.single('qrImage')(req, res, async (err) => {
+        if (err) {
+            const isSizeError = err.code === 'LIMIT_FILE_SIZE';
+            return res.status(400).json({
+                status: 'error',
+                message: isSizeError
+                    ? 'Image too large. Maximum allowed size is 5MB.'
+                    : err.message || 'Failed to process uploaded image.'
+            });
+        }
+
+        try {
+            if (!req.file?.buffer) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'No QR image provided. Please upload an image in field "qrImage".'
+                });
+            }
+
+            const rawQr = await decodeQrFromBuffer(req.file.buffer);
+            if (!rawQr) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'No QR code detected in the image.'
+                });
+            }
+
+            const result = await analyzeUpiQr(rawQr);
+            if (!result.ok) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: result.error || 'Unable to analyze QR content.'
+                });
+            }
+
+            return res.json({
+                status: 'success',
+                extracted: result.extracted,
+                analysis: result.analysis
+            });
+        } catch (error) {
+            console.error('QR scan error:', error);
+            return res.status(500).json({
+                status: 'error',
+                message: 'Failed to scan QR code'
+            });
+        }
+    });
 });
 
 

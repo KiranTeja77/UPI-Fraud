@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import config from './config/config.js';
+import './db.js';
 import honeypotRoutes from './routes/honeypot.js';
 import upifraudRoutes from './routes/upifraud.js';
+import activeDefenseRoutes from './routes/activeDefenseRoutes.js';
 
 // Initialize Express app
 const app = express();
@@ -47,10 +49,12 @@ app.get('/api', (req, res) => {
         description: 'AI-powered UPI fraud detection with regional alerts, risk scoring, and safety education',
         endpoints: {
             'POST /api/upi/analyze': 'Analyze a UPI transaction for fraud',
+            'POST /api/upi/scan-qr': 'Scan and analyze a UPI payment QR image',
             'POST /api/upi/alert': 'Generate regional language fraud alert',
             'GET /api/upi/languages': 'Get supported languages',
             'GET /api/upi/tips': 'Get safety tips (optional ?category= filter)',
             'POST /api/upi/tips/contextual': 'Get contextual safety tips',
+            'POST /api/chat/defense': 'Active defense chat mode for scammer messages',
             'POST /api/honeypot': 'Process incoming scam message',
             'GET /api/honeypot/session/:sessionId': 'Get session details',
             'POST /api/honeypot/session/:sessionId/callback': 'Manually trigger GUVI callback',
@@ -63,6 +67,7 @@ app.get('/api', (req, res) => {
 // Mount routes
 app.use('/api/honeypot', honeypotRoutes);
 app.use('/api/upi', upifraudRoutes);
+app.use('/api/chat', activeDefenseRoutes);
 
 // 404 handler
 app.use((req, res) => {
