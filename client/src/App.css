@@ -1168,6 +1168,37 @@ body {
   border-radius: 8px;
 }
 
+/* Victim view: slightly reduce overlap and bulk for better alignment */
+.victim-view .risk-banner {
+  padding: 8px 10px;
+  margin: 0 1rem 10px;
+  border-radius: 6px;
+}
+
+.victim-view .risk-banner .risk-header {
+  font-size: 0.9rem;
+}
+
+.victim-view .risk-banner .risk-category,
+.victim-view .risk-banner ul,
+.victim-view .risk-banner .risk-actions {
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+
+.victim-lang-selector {
+  padding: 0 1rem 0.5rem;
+  margin-bottom: 0;
+}
+
+.victim-lang-selector .lang-btn {
+  padding: 0.35rem 0.6rem;
+  min-width: 64px;
+}
+
+.victim-lang-selector .lang-native { font-size: 0.65rem; }
+.victim-lang-selector .lang-name { font-size: 0.5rem; }
+
 .risk-banner.low {
   background: #102a43;
   border-left: 4px solid #2ecc71;

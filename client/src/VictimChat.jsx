@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import './App.css';
 
 function getSessionIdFromUrl() {
@@ -16,6 +16,25 @@ function getSessionIdFromUrl() {
 
 const SESSION_ID = getSessionIdFromUrl();
 
+/** Build fraudResult shape expected by /api/upi/alert from session risk */
+function sessionRiskToFraudResult(sessionRisk) {
+  if (!sessionRisk) return null;
+  const indicators = (sessionRisk.indicators || []).map((ind) =>
+    typeof ind === 'string' ? { label: ind } : ind
+  );
+  const fraudCategory =
+    typeof sessionRisk.fraudCategory === 'object' && sessionRisk.fraudCategory?.name
+      ? sessionRisk.fraudCategory
+      : { name: typeof sessionRisk.fraudCategory === 'string' ? sessionRisk.fraudCategory : 'Suspicious Activity' };
+  return {
+    riskScore: sessionRisk.riskScore,
+    riskLevel: sessionRisk.riskLevel,
+    fraudCategory,
+    indicators,
+    reasoning: sessionRisk.reasoning || 'Risk detected from conversation.'
+  };
+}
+
 function VictimChat({ apiUrl, apiKey }) {
   const [messages, setMessages] = useState([]);
   const [victimInput, setVictimInput] = useState('');
@@ -23,6 +42,12 @@ function VictimChat({ apiUrl, apiKey }) {
   const [isScamConfirmed, setIsScamConfirmed] = useState(false);
   const [sessionRisk, setSessionRisk] = useState(null);
   const [error, setError] = useState('');
+
+  const [languages, setLanguages] = useState([]);
+  const [selectedLanguage, setSelectedLanguage] = useState('hi');
+  const [alertResult, setAlertResult] = useState(null);
+  const [isGeneratingAlert, setIsGeneratingAlert] = useState(false);
+  const speechUtteranceRef = useRef(null);
 
   const fetchSession = async () => {
     try {
@@ -64,6 +89,77 @@ function VictimChat({ apiUrl, apiKey }) {
       clearInterval(interval);
     };
   }, [apiUrl, apiKey]);
+
+  const fetchLanguages = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/api/upi/languages`, {
+        headers: { 'x-api-key': apiKey }
+      });
+      const data = await res.json();
+      if (data.languages) setLanguages(data.languages);
+    } catch (e) {
+      console.error('Fetch languages error:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchLanguages();
+  }, [apiUrl, apiKey]);
+
+  const generateAlert = async (risk, lang) => {
+    const fraudResult = sessionRiskToFraudResult(risk);
+    if (!fraudResult) return;
+    setIsGeneratingAlert(true);
+    setAlertResult(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/upi/alert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify({ fraudResult, language: lang })
+      });
+      const data = await res.json();
+      if (data.alert) setAlertResult(data.alert);
+    } catch (e) {
+      console.error('Alert error:', e);
+    } finally {
+      setIsGeneratingAlert(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!sessionRisk || sessionRisk.riskScore == null) {
+      setAlertResult(null);
+      return;
+    }
+    generateAlert(sessionRisk, selectedLanguage);
+  }, [sessionRisk?.riskScore, sessionRisk?.riskLevel, selectedLanguage]);
+
+  const handleLanguageChange = (code) => {
+    setSelectedLanguage(code);
+    if (sessionRisk) generateAlert(sessionRisk, code);
+  };
+
+  useEffect(() => {
+    if (!alertResult || typeof window === 'undefined' || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const langCode = alertResult.languageCode || selectedLanguage;
+    const bcp47 = langCode === 'en' ? 'en-IN' : `${langCode}-IN`;
+    const parts = [];
+    if (alertResult.title) parts.push(alertResult.title);
+    if (alertResult.body) parts.push(alertResult.body);
+    if (alertResult.actions?.length) parts.push(alertResult.actions.join('. '));
+    if (alertResult.emergency) parts.push(alertResult.emergency);
+    const textToSpeak = parts.filter(Boolean).join(' ');
+    if (!textToSpeak) return;
+    const u = new SpeechSynthesisUtterance(textToSpeak);
+    u.lang = bcp47;
+    speechUtteranceRef.current = u;
+    window.speechSynthesis.speak(u);
+    return () => {
+      window.speechSynthesis.cancel();
+      speechUtteranceRef.current = null;
+    };
+  }, [alertResult, selectedLanguage]);
 
   const numericRiskScore =
     sessionRisk && sessionRisk.riskScore != null
@@ -120,7 +216,7 @@ function VictimChat({ apiUrl, apiKey }) {
   };
 
   return (
-    <div className="app">
+    <div className="app victim-view">
       <header className="header">
         <div className="logo">
           <div className="logo-shield">🛡️</div>
@@ -137,6 +233,23 @@ function VictimChat({ apiUrl, apiKey }) {
             <div className="chat-top-bar">
               <h2>🟦 Victim Risk View</h2>
             </div>
+
+            {languages.length > 0 && (
+              <div className="language-selector victim-lang-selector">
+                {languages.map((lang) => (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    className={`lang-btn ${selectedLanguage === lang.code ? 'active' : ''}`}
+                    onClick={() => handleLanguageChange(lang.code)}
+                  >
+                    <span className="lang-flag">{lang.flag}</span>
+                    <span className="lang-native">{lang.nativeName}</span>
+                    <span className="lang-name">{lang.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {sessionRisk && (
               <div className={`risk-banner ${(sessionRisk.riskLevel || 'low').toLowerCase()}`}>
@@ -215,7 +328,48 @@ function VictimChat({ apiUrl, apiKey }) {
               )}
             </div>
 
-            {isScamConfirmed && numericRiskScore != null && Number.isFinite(numericRiskScore) && numericRiskScore >= 70 && (
+            {isGeneratingAlert && (
+              <div className="alert-loading">
+                <span className="spinner"></span>
+                <span>Generating alert in {languages.find((l) => l.code === selectedLanguage)?.nativeName || selectedLanguage}...</span>
+              </div>
+            )}
+
+            {alertResult && (
+              <div className={`alert-display glass-card risk-border-${(sessionRisk?.riskLevel || 'medium').toLowerCase()}`}>
+                <div className="alert-header">
+                  <div className="alert-lang-badge">
+                    <span>{alertResult.language?.flag}</span>
+                    <span>{alertResult.language?.nativeName}</span>
+                  </div>
+                  {alertResult.riskScore !== undefined && (
+                    <div className={`risk-badge ${(alertResult.riskLevel || '').toLowerCase()}`}>
+                      Risk: {alertResult.riskScore}/100
+                    </div>
+                  )}
+                </div>
+                <h2 className="alert-title">{alertResult.title}</h2>
+                <p className="alert-body">{alertResult.body}</p>
+                {alertResult.actions?.length > 0 && (
+                  <div className="alert-actions">
+                    <h4>🔒 Actions:</h4>
+                    <ul>
+                      {alertResult.actions.map((a, i) => (
+                        <li key={i}>{a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {alertResult.emergency && (
+                  <div className="alert-emergency">
+                    <span>🚨</span>
+                    <span>{alertResult.emergency}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isScamConfirmed && numericRiskScore != null && Number.isFinite(numericRiskScore) && numericRiskScore >= 70 && !alertResult && (
               <div className="alert-display glass-card risk-border-high">
                 <h2 className="alert-title">🚨 Scam Activity Detected</h2>
                 <p className="alert-body">

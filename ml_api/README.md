@@ -7,7 +7,7 @@ Uses `custom_upi_fraud_dataset.csv` to train a fraud classifier and exposes a Fa
 From project root:
 
 ```bash
-pip install -r ml_api/requirements.txt
+pip install -r requirements.txt
 ```
 
 ## Train (required once)

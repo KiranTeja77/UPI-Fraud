@@ -82,6 +82,7 @@ function App() {
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
+  const speechUtteranceRef = useRef(null);
 
   const path = window.location.pathname;
   if (path === '/scammer') {
@@ -133,6 +134,34 @@ function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [scanHistory, isScanning]);
+
+  // Voiceover: speak the alert message in the selected language when alert is displayed (no UI/text changes)
+  useEffect(() => {
+    if (!alertResult || typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    window.speechSynthesis.cancel();
+    const langCode = alertResult.languageCode || selectedLanguage;
+    const bcp47 = langCode === 'en' ? 'en-IN' : `${langCode}-IN`;
+
+    const parts = [];
+    if (alertResult.title) parts.push(alertResult.title);
+    if (alertResult.body) parts.push(alertResult.body);
+    if (alertResult.actions?.length) parts.push(alertResult.actions.join('. '));
+    if (alertResult.emergency) parts.push(alertResult.emergency);
+    const textToSpeak = parts.filter(Boolean).join(' ');
+
+    if (!textToSpeak) return;
+
+    const u = new SpeechSynthesisUtterance(textToSpeak);
+    u.lang = bcp47;
+    speechUtteranceRef.current = u;
+    window.speechSynthesis.speak(u);
+
+    return () => {
+      window.speechSynthesis.cancel();
+      speechUtteranceRef.current = null;
+    };
+  }, [alertResult, selectedLanguage]);
 
   const fetchLanguages = async () => {
     try {
