@@ -323,6 +323,47 @@ body {
   height: 100%;
 }
 
+/* Pay tab: center form like a form-filling card */
+.validate-pay-layout {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2rem 1rem 3rem;
+  overflow-y: auto;
+}
+
+.validate-pay-layout .validate-pay-card {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  height: auto;
+  min-height: 0;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  padding: 0 0 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.validate-pay-layout .chat-top-bar {
+  border-radius: 16px 16px 0 0;
+}
+
+.validate-pay-layout .validate-form,
+.validate-pay-layout .validate-submit-btn {
+  max-width: 100%;
+}
+
+.validate-pay-layout .validate-form {
+  padding: 0 1.5rem;
+}
+
+.validate-pay-layout .validate-pay-desc {
+  padding: 0 1.5rem;
+}
+
+.validate-pay-layout .validate-result {
+  margin: 1rem 1.5rem 0;
+}
+
 .chat-feed {
   display: flex;
   flex-direction: column;
@@ -1343,11 +1384,279 @@ body {
   padding: 1.5rem;
 }
 
+/* Validate before Pay form */
+.validate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  max-width: 420px;
+}
+
+.validate-pay-desc {
+  margin-top: 0.5rem;
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+.validate-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.validate-form label span:first-child {
+  font-weight: 500;
+}
+
+.validate-form input[type="text"],
+.validate-form input[type="number"] {
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text-primary);
+  font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.validate-form input:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  cursor: pointer;
+}
+
+.checkbox-label input { margin-right: 0.5rem; }
+
+/* Single-line submit button, aligned with form */
+.validate-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.9), rgba(139, 92, 246, 0.9));
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+  width: 100%;
+  max-width: 420px;
+}
+
+.validate-submit-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+}
+
+.validate-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.validate-result {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+}
+
+.validate-result.safe {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.validate-result.block {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.validate-result.error {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.validate-result-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.validate-emoji { font-size: 1.5rem; }
+
+.validate-score {
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.validate-level {
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.validate-message {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.validate-status-message {
+  margin: 0.5rem 0;
+}
+
+.validate-status-message .validate-message-primary {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.validate-status-message .validate-message-sub {
+  font-size: 0.95rem;
+  opacity: 0.95;
+  margin: 0;
+}
+
+.validate-status-success .validate-message-primary {
+  color: #059669;
+}
+
+.validate-status-success .validate-message-sub {
+  color: #047857;
+}
+
+.validate-status-warning .validate-message-primary {
+  color: #b45309;
+}
+
+.validate-status-warning .validate-message-sub {
+  color: #92400e;
+}
+
+.validate-status-danger .validate-message-primary {
+  color: #dc2626;
+}
+
+.validate-status-danger .validate-message-sub {
+  color: #b91c1c;
+}
+
+.validate-block {
+  margin: 0.5rem 0;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.validate-blacklist {
+  background: rgba(239, 68, 68, 0.15);
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.validate-indicators,
+.validate-recommendations {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.validate-indicators ul,
+.validate-recommendations ul {
+  margin: 0.25rem 0 0 1rem;
+  padding-left: 0.5rem;
+}
+
+.validate-time {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
 .defense-actions {
   margin-top: 1rem;
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+/* Extension: Quick open & ML status */
+.extension-card {
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+  border-radius: 12px;
+}
+
+.extension-card .card-title {
+  margin-bottom: 0.35rem;
+}
+
+.extension-card .card-title h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.extension-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.extension-btn {
+  font-size: 0.9rem;
+}
+
+.ml-status-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--glass-border);
+}
+
+.ml-status-pill .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ml-status-pill.online {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--text-secondary);
+}
+
+.ml-status-pill.online .status-dot {
+  background: #10b981;
+}
+
+.ml-status-pill.offline {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.06);
+  color: var(--text-secondary);
+}
+
+.ml-status-pill.offline .status-dot {
+  background: #ef4444;
 }
 
 .tip-categories {

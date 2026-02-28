@@ -15,6 +15,10 @@ export const config = {
 
   // Session management
   sessionTimeoutMs: 30 * 60 * 1000,  // 30 minutes
+
+  // Optional ML fraud model (probability 0-1); fused with rule score when set
+  mlFraudApiUrl: process.env.ML_FRAUD_API_URL || process.env.ML_FRAUD_API,
+  mlFraudTimeoutMs: Math.min(Number(process.env.ML_FRAUD_TIMEOUT_MS) || 150, 180),
 };
 
 export default config;

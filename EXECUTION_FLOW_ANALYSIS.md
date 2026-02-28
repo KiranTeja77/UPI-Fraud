@@ -68,20 +68,19 @@
    - Set `session.divertedToHoneypot = true`, `session.isScamConfirmed = true`.
    - **Run risk engine for this message** (so victim sees current risk): `detectScam`, `analyzeTransaction`, optional `analyzeUpiQr` → `mergeRiskResults` → `currentRisk`. Set `session.lastRisk = currentRisk`.
    - Mark last message `deliveredToVictim = true` (victim sees scammer text).
-   - `honeypotReply = generateHoneypotReply(cleanText, sessionId)` (conversationAgent).
-   - Push `{ sender: 'honeypot', text: honeypotReply, deliveredToVictim: false }`.
+   - **Only if currentRisk.riskScore >= 70:** `generateHoneypotReply`, push honeypot message with `deliveredToVictim: true`. (Safe/medium messages in this branch get no AI reply.)
    - `session.save()`. Return `{ status, diverted: true, risk: currentRisk, honeypotReply }`.
 
 6. **Branch 2 — Not blacklisted, not yet diverted:**
    - **Risk engine:** `detectScam(cleanText)`, `analyzeTransaction(txnForAnalysis)`, optional `analyzeUpiQr(cleanText)` → `mergeRiskResults` → `finalRisk`. Set `session.lastRisk = finalRisk`, `lastMessage = session.messages[session.messages.length - 1]`.
    - **If finalRisk.riskScore >= 70:**  
-     Blacklist upsert (scammerId, upiIds, phoneNumbers), `divertedToHoneypot = true`, `isScamConfirmed = true`, generate honeypot reply, push honeypot message (deliveredToVictim: false), set `lastMessage.deliveredToVictim = true`. Save, return `{ status, diverted: true, risk: finalRisk, honeypotReply }`.
+     Blacklist upsert, `divertedToHoneypot = true`, `isScamConfirmed = true`, generate honeypot reply, push honeypot message with `deliveredToVictim: true`, set `lastMessage.deliveredToVictim = true`. Save, return `{ status, diverted: true, risk: finalRisk, honeypotReply }`.
    - **Else if finalRisk.riskScore >= 40:**  
-     `lastMessage.deliveredToVictim = true`, generate skeptical honeypot reply, push it with `deliveredToVictim: true`, `divertedToHoneypot = false`. Save, return `{ status, diverted: false, risk: finalRisk, honeypotReply }`.
+     `lastMessage.deliveredToVictim = true` only; **no honeypot reply**. Victim and other user chat normally. Save, return `{ status, diverted: false, risk: finalRisk, honeypotReply: null }`.
    - **Else (low risk):**  
      `lastMessage.deliveredToVictim = true`. Save, return `{ status, diverted: false, risk: finalRisk, honeypotReply: null }`.
 
-7. **Frontend (Scammer):** On success, if `data.honeypotReply` present, append `{ sender: 'honeypot', text: data.honeypotReply }` to local messages. Scammer never sees risk or diversion.
+7. **Frontend (Scammer):** After send, `fetchSession()` polls messages from server; scammer sees victim replies when safe and honeypot "Reply" only when risk was high. Scammer never sees risk or diversion.
 
 ---
 
@@ -96,7 +95,7 @@
    - Else: `deliveredMessages = session.messages.filter(m => m.deliveredToVictim)`.
    - Return `{ status, messages: deliveredMessages.map(m => ({ sender, text, timestamp })), isScamConfirmed: !!session.isScamConfirmed, risk: session.lastRisk || null, extractedDetails: null }`.
 5. **Frontend (Victim):**
-   - `setMessages(data.messages)` (mapped to { id, type: 'scammer'|'honeypot', text }).
+   - `setMessages(data.messages)` (mapped to { id, type: 'scammer'|'honeypot'|'victim', text }).
    - `setIsScamConfirmed(!!data.isScamConfirmed)`.
    - If `data.risk && data.risk.riskScore !== undefined` then `setSessionRisk(data.risk)` else `setSessionRisk(null)`.
    - **Banner:** If `sessionRisk` exists, render risk banner (always): riskLevel, riskScore/100, fraud category, indicators, recommendedActions (no extracted UPI/phones/links).
@@ -131,7 +130,7 @@
 ## 4. Key Data and Decisions
 
 - **Session bridge:** Scammer and Victim use the same `sessionId` (from URL `?session=` or `demo-session-001`). All messages and risk for that conversation live under one `ChatSession` and one `lastRisk`.
-- **Delivered vs not:** Only messages with `deliveredToVictim: true` are returned by `getChatSession`. High-risk diversion: scammer message is delivered so victim sees it; honeypot reply is not delivered to victim. Medium-risk: both scammer and honeypot reply delivered.
+- **Delivered vs not:** Only messages with `deliveredToVictim: true` are returned by `getChatSession`. High-risk: scammer message and honeypot reply both delivered (victim and scammer see honeypot). Medium/low: only scammer (and victim) messages; no honeypot message.
 - **Risk is session-level:** One `lastRisk` per session, updated on every `handleChatMessage` (including in the blacklisted/diverted branch so a later safe message shows low risk and allows reply).
 - **Blocking victim reply:** Only when `sessionRisk.riskScore >= 70` and `sessionRisk.diverted` (i.e. high-risk diversion). Safe or medium risk allows reply.
 - **No extracted details to victim:** `getChatSession` always returns `extractedDetails: null`; victim sees only risk summary (score, level, category, indicators, actions).
@@ -139,7 +138,53 @@
 
 ---
 
-## 5. File-to-Flow Quick Reference
+## 5. Diagram vs current project — and corrected execution flow
+
+Your diagram ("AI-Powered UPI Fraud Detection & Active Defense System") is mostly aligned; a few details differ from the code. Below: **what matches**, **what doesn’t**, and the **correct execution flow** you can use for docs/slides.
+
+### What matches the diagram
+
+- **User interaction:** Scammer UI, Victim UI, Fraud Scanner User (message scanner) — correct.
+- **Report/input layer:** Message Scanner, QR Upload, Chat Message Send, Session Handling — correct (POST /api/upi/scan, POST /api/upi/scan-qr, POST /api/chat/send, GET /api/chat/session/:id, POST /api/chat/victim-reply).
+- **Server:** Express API, session/chat handling, auto defense logic — correct. Hybrid detection (rules + LLM) is correct: rules in upiTransactionAnalyzer/scamDetector/qrAnalyzer, optional Gemini in extractors and analyzers.
+- **Real-time risk score 0–100:** Produced by merging scam + transaction + QR analysis — correct.
+- **Victim protection:** Real-time risk banner, reply block when risk ≥ 70%, scam warning, recommended actions — correct. Conditional diversion from risk engine to this layer — correct.
+- **MongoDB:** ChatSession, Blacklist; risk and extracted data used in backend — correct (no “Risk History” or “Extracted Intelligence” collections by name; risk is in `session.lastRisk`, blacklist is separate).
+- **External services:** Gemini, regional alerts, callback — correct. No separate “Cloud Image Processing” service; QR decode is Jimp + qrcode-reader in qrDecoderService.
+
+### What does not match (risk decision engine)
+
+- **Diagram says:**  
+  - Risk &lt; 40% → Deliver to Victim  
+  - Risk 40–69% → **Skeptical Honeypot Reply**  
+  - Risk ≥ 70% → Full Honeypot Diversion  
+
+- **Current code:**  
+  - Risk **&lt; 40%:** Deliver to victim only; **no** honeypot reply. Victim and other user chat normally.  
+  - Risk **40–69%:** Deliver to victim only; **no** honeypot reply. Victim and other user chat normally.  
+  - Risk **≥ 70%:** Full honeypot diversion; honeypot replies; victim cannot reply.  
+
+So the only behavioral mismatch is **40–69%**: in the project there is **no** skeptical honeypot reply; the AI replies **only when risk ≥ 70%**.
+
+### Corrected execution flow (for diagram / documentation)
+
+Use this flow so the diagram matches the project:
+
+1. **User interaction** → Scammer UI / Victim UI / Fraud Scanner User.
+2. **Report/input layer** → Message Scanner, QR Upload, Chat Message Send, Session Handling (unchanged).
+3. **AI/ML & risk scoring** → Entity extraction (`messageExtractor`) → Scam detection (`scamDetector`) + UPI transaction analysis (`upiTransactionAnalyzer`) + optional QR analysis (`qrAnalyzerService`) → **mergeRiskResults** → **Real-time risk score 0–100** (single score per message).
+4. **Risk decision engine (corrected):**
+   - **Risk score &lt; 40:** Deliver to victim only. No honeypot. Victim and other user can chat.
+   - **Risk score 40–69:** Deliver to victim only. No honeypot. Victim and other user can chat. (Show risk banner/warning if desired.)
+   - **Risk score ≥ 70:** Full honeypot diversion. Honeypot replies to scammer; victim sees message + honeypot reply; victim reply blocked.
+5. **Conditional diversion** → From risk decision engine to **Victim protection layer**: risk banner, reply block (risk ≥ 70%), scam warning, recommended actions.
+6. **Outcomes:** Real-time fraud prevention, scammer engagement via honeypot when risky, user safety.
+
+**Additional detail (already in code):** If the session is already diverted (blacklisted), the honeypot still replies **only when the current message’s risk ≥ 70**; safe/medium messages in that branch get no AI reply.
+
+---
+
+## 6. File-to-Flow Quick Reference
 
 | Flow | Entry | Route | Controller / Logic | Response |
 |------|--------|--------|--------------------|----------|

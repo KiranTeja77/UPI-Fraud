@@ -13,8 +13,68 @@ An AI-powered honeypot system that detects scam messages, engages scammers in be
 
 ## 📋 Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
+- Python 3.8+ (for ML fraud API)
 - Google Gemini API key (for AI-powered responses)
+- MongoDB (for Active Defense chat sessions)
+
+---
+
+## 🏃 How to run everything
+
+Use **3 terminals** (or run ML API only when you want fused ML risk).
+
+### Terminal 1 — Backend (Node)
+
+```bash
+# From project root
+cp .env.example .env
+# Edit .env: set GEMINI_API_KEY, MONGODB_URI, API_KEY, and optionally ML_FRAUD_API_URL
+
+npm install
+npm run dev
+```
+
+Backend runs at **http://localhost:3000**.
+
+### Terminal 2 — Frontend (React)
+
+```bash
+# From project root
+cd client
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173** in the browser.
+
+### Terminal 3 — ML Fraud API (optional)
+
+Only needed if you want ML risk fused with rule-based risk.
+
+```bash
+# From project root
+pip install -r ml_api/requirements.txt
+python ml_api/train.py
+cd ml_api
+uvicorn main:app --host 0.0.0.0 --port 5000
+```
+
+Then in `.env` set:
+```env
+ML_FRAUD_API_URL=http://localhost:5000/predict
+ML_FRAUD_TIMEOUT_MS=150
+```
+Restart the Node backend so it picks up the ML URL.
+
+**Quick check:**  
+- Backend: http://localhost:3000/health  
+- Frontend: http://localhost:5173  
+- ML API: http://localhost:5000/health (use **localhost**, not 0.0.0.0)
+
+**Order:** Start backend first, then frontend. Start ML API only if you use it; then set `ML_FRAUD_API_URL` in `.env` and restart the backend.
+
+---
 
 ## ⚙️ Installation
 

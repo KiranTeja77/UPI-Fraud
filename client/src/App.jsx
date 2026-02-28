@@ -64,10 +64,21 @@ function App() {
   const [qrError, setQrError] = useState('');
   const [isQrScanning, setIsQrScanning] = useState(false);
 
+  // Validate before pay (real-time transaction validation with ML)
+  const [validateAmount, setValidateAmount] = useState('');
+  const [validateUpi, setValidateUpi] = useState('');
+  const [validateDesc, setValidateDesc] = useState('');
+  const [validateNewPayee, setValidateNewPayee] = useState(false);
+  const [validateResult, setValidateResult] = useState(null);
+  const [isValidating, setIsValidating] = useState(false);
+
   // Active defense shared session id (used in /scammer and /victim links)
   const [chatSessionId, setChatSessionId] = useState(() => {
     return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   });
+
+  // Extension: ML API status (for Quick open card)
+  const [mlHealth, setMlHealth] = useState({ mlEnabled: false, modelLoaded: false });
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -92,6 +103,25 @@ function App() {
     const interval = setInterval(check, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // Extension: fetch ML API status when defense tab is active
+  useEffect(() => {
+    if (activeTab !== 'defense') return;
+    const fetchMlHealth = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/chat/ml-health`, {
+          headers: { 'x-api-key': API_KEY }
+        });
+        const data = await res.json();
+        setMlHealth({ mlEnabled: !!data.mlEnabled, modelLoaded: !!data.modelLoaded });
+      } catch {
+        setMlHealth({ mlEnabled: false, modelLoaded: false });
+      }
+    };
+    fetchMlHealth();
+    const interval = setInterval(fetchMlHealth, 15000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
 
   // Fetch languages & tips on mount
   useEffect(() => {
@@ -232,6 +262,36 @@ function App() {
     setScanHistory([]);
   };
 
+  // Validate transaction before pay (real-time check with rules + ML)
+  const validateTransaction = async () => {
+    const upi = validateUpi.trim();
+    if (!upi) return;
+    setIsValidating(true);
+    setValidateResult(null);
+    try {
+      const res = await fetch(`${API_URL}/api/upi/validate-transaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({
+          amount: validateAmount === '' ? 0 : Number(validateAmount),
+          receiverUPI: upi,
+          description: validateDesc.trim(),
+          newPayee: validateNewPayee
+        })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        setValidateResult(data);
+      } else {
+        setValidateResult({ error: data.message || 'Validation failed' });
+      }
+    } catch (e) {
+      setValidateResult({ error: 'Failed to connect to server' });
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
   // ═══ QR SCANNER ═══
   const handleQrFileChange = (event) => {
     const file = event.target.files?.[0];
@@ -327,6 +387,10 @@ function App() {
         <button className={`nav-tab ${activeTab === 'scanner' ? 'active' : ''}`} onClick={() => setActiveTab('scanner')}>
           <span className="tab-icon">🔍</span>
           <span>Message Scanner</span>
+        </button>
+        <button className={`nav-tab ${activeTab === 'validate' ? 'active' : ''}`} onClick={() => setActiveTab('validate')}>
+          <span className="tab-icon">💳</span>
+          <span>Pay</span>
         </button>
         <button className={`nav-tab ${activeTab === 'defense' ? 'active' : ''}`} onClick={() => setActiveTab('defense')}>
           <span className="tab-icon">🛡️</span>
@@ -586,6 +650,144 @@ function App() {
           </div>
         )}
 
+        {/* ═══ TAB: Pay (real-time transaction validation + ML) ═══ */}
+        {activeTab === 'validate' && (
+          <div className="scanner-layout validate-pay-layout">
+            <section className="chat-feed glass-card validate-pay-card">
+              <div className="chat-top-bar">
+                <h2>💳 Pay</h2>
+              </div>
+              <p className="card-desc validate-pay-desc">
+                Enter payment details as you would before clicking Pay. We run rule-based + ML checks in real time to flag fraud before you pay.
+              </p>
+
+              <div className="validate-form">
+                <label>
+                  <span>Receiver UPI ID *</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. 9876543210@ybl or name@bank"
+                    value={validateUpi}
+                    onChange={(e) => setValidateUpi(e.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>Amount (₹)</span>
+                  <input
+                    type="number"
+                    placeholder="e.g. 5000"
+                    value={validateAmount}
+                    onChange={(e) => setValidateAmount(e.target.value)}
+                    min="0"
+                  />
+                </label>
+                <label>
+                  <span>Description / note</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Payment for order #123"
+                    value={validateDesc}
+                    onChange={(e) => setValidateDesc(e.target.value)}
+                  />
+                </label>
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={validateNewPayee}
+                    onChange={(e) => setValidateNewPayee(e.target.checked)}
+                  />
+                  <span>First time paying this UPI (new payee)</span>
+                </label>
+                <button
+                  type="button"
+                  className="validate-submit-btn"
+                  onClick={validateTransaction}
+                  disabled={!validateUpi.trim() || isValidating}
+                >
+                  {isValidating ? <span className="spinner"></span> : 'Check before Pay'}
+                </button>
+              </div>
+
+              {validateResult && (
+                <div className={`validate-result glass-card ${validateResult.error ? 'error' : validateResult.shouldBlock ? 'block' : 'safe'}`}>
+                  {validateResult.error ? (
+                    <p>{validateResult.error}</p>
+                  ) : (
+                    <>
+                      <div className="validate-result-header">
+                        <span className="validate-emoji">{validateResult.riskEmoji || '✅'}</span>
+                        <span className="validate-score">{validateResult.riskScore}/100</span>
+                        <span className="validate-level">{validateResult.riskLevel}</span>
+                      </div>
+                      {/* Risk-based primary message: Low = success, Medium = warn & check, High = don't pay */}
+                      {(() => {
+                        const level = (validateResult.riskLevel || '').toUpperCase();
+                        const isLow = level === 'LOW';
+                        const isMedium = level === 'MEDIUM';
+                        const isHigh = ['HIGH', 'CRITICAL'].includes(level);
+                        if (isLow) {
+                          return (
+                            <div className="validate-status-message validate-status-success">
+                              <p className="validate-message validate-message-primary">Payment successful</p>
+                              <p className="validate-message-sub">You can proceed with this payment. Always verify the payee.</p>
+                            </div>
+                          );
+                        }
+                        if (isMedium) {
+                          return (
+                            <div className="validate-status-message validate-status-warning">
+                              <p className="validate-message validate-message-primary">Caution — verify before paying</p>
+                              <p className="validate-message-sub">Please verify the recipient and check before you pay.</p>
+                            </div>
+                          );
+                        }
+                        if (isHigh) {
+                          return (
+                            <div className="validate-status-message validate-status-danger">
+                              <p className="validate-message validate-message-primary">High alert — do not pay</p>
+                              <p className="validate-message-sub">Do not do the payment. This transaction was flagged as high risk.</p>
+                            </div>
+                          );
+                        }
+                        return <p className="validate-message">{validateResult.message}</p>;
+                      })()}
+                      {validateResult.shouldBlock && (
+                        <p className="validate-block">🚫 Do not proceed with this payment.</p>
+                      )}
+                      {validateResult.blacklisted && (
+                        <p className="validate-block validate-blacklist">This UPI is in our blacklist. Do not exchange money with this recipient.</p>
+                      )}
+                      {validateResult.triggeredIndicators?.length > 0 && (
+                        <div className="validate-indicators">
+                          <strong>Indicators:</strong>
+                          <ul>
+                            {validateResult.triggeredIndicators.map((ind, i) => (
+                              <li key={i}>{ind}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {validateResult.recommendations?.length > 0 && (
+                        <div className="validate-recommendations">
+                          <strong>Recommendations:</strong>
+                          <ul>
+                            {validateResult.recommendations.slice(0, 5).map((rec, i) => (
+                              <li key={i}>{rec}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {validateResult.responseTimeMs != null && (
+                        <p className="validate-time">Checked in {validateResult.responseTimeMs}ms</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
         {/* ═══ TAB: Active Defense ═══ */}
         {activeTab === 'defense' && (
           <div className="defense-layout">
@@ -623,6 +825,45 @@ function App() {
                 >
                   Start New Session
                 </button>
+              </div>
+
+              {/* Extension: Quick open & ML status */}
+              <div className="extension-card glass-card">
+                <div className="card-title">
+                  <span className="card-icon">🔌</span>
+                  <h3>Quick open & ML status</h3>
+                </div>
+                <p className="card-desc">
+                  Open chat views in new tabs to simulate scammer vs victim. ML model fuses with rule-based risk when enabled.
+                </p>
+                <div className="extension-actions">
+                  <a
+                    href={`/scammer?session=${encodeURIComponent(chatSessionId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="nav-link-btn extension-btn"
+                  >
+                    🟥 Open Scammer (new tab)
+                  </a>
+                  <a
+                    href={`/victim?session=${encodeURIComponent(chatSessionId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="nav-link-btn extension-btn"
+                  >
+                    🟦 Open Victim (new tab)
+                  </a>
+                </div>
+                <div className={`ml-status-pill ${mlHealth.mlEnabled && mlHealth.modelLoaded ? 'online' : 'offline'}`}>
+                  <span className="status-dot"></span>
+                  <span>
+                    {!mlHealth.mlEnabled
+                      ? 'ML API not configured (.env ML_FRAUD_API_URL)'
+                      : mlHealth.modelLoaded
+                        ? 'ML model ready — used for Pay transaction check'
+                        : 'ML API unreachable or model not loaded'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

@@ -224,7 +224,7 @@ export const handleChatMessage = async (req, res) => {
       const qrAnalysisDiverted = cleanText.toLowerCase().includes('upi://pay')
         ? await analyzeUpiQr(cleanText)
         : null;
-      const currentRisk = mergeRiskResults(scamAnalysisDiverted, transactionAnalysisDiverted, qrAnalysisDiverted);
+      let currentRisk = mergeRiskResults(scamAnalysisDiverted, transactionAnalysisDiverted, qrAnalysisDiverted);
       session.lastRisk = currentRisk;
 
       // Ensure the just-added scammer message is visible to the victim
@@ -272,7 +272,6 @@ export const handleChatMessage = async (req, res) => {
       : null;
 
     const finalRisk = mergeRiskResults(scamAnalysis, transactionAnalysis, qrAnalysis);
-
     // Persist last computed risk on the session for victim UI
     // eslint-disable-next-line no-param-reassign
     session.lastRisk = finalRisk;

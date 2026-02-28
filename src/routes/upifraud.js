@@ -7,6 +7,18 @@ import { generateAlert, getSupportedLanguages } from '../services/regionalAlertS
 import { getTips, getContextualTips } from '../services/safetyTipsService.js';
 import { decodeQrFromBuffer } from '../services/qrDecoderService.js';
 import { analyzeUpiQr } from '../services/qrAnalyzerService.js';
+import { getMlFraudProbability, applyMlFusionToScanAnalysis } from '../services/mlFraudService.js';
+import { detectScam } from '../services/scamDetector.js';
+import Blacklist from '../models/Blacklist.js';
+
+const PAY_VALIDATION_BLACKLIST_ID = 'pay-validation';
+
+function riskLevelFromScore(score) {
+    if (score >= 85) return { riskLevel: 'CRITICAL', riskColor: '#dc2626', riskEmoji: '🚨' };
+    if (score >= 70) return { riskLevel: 'HIGH', riskColor: '#ea580c', riskEmoji: '⚠️' };
+    if (score >= 40) return { riskLevel: 'MEDIUM', riskColor: '#d97706', riskEmoji: '🔶' };
+    return { riskLevel: 'LOW', riskColor: '#16a34a', riskEmoji: '✅' };
+}
 
 const router = express.Router();
 
@@ -91,6 +103,137 @@ router.post('/scan', authenticateApiKey, async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Failed to scan message'
+        });
+    }
+});
+
+/**
+ * POST /api/upi/validate-transaction
+ * Real-time transaction validation before pay. Validates description (scam/NLP) like chatbot,
+ * merges with transaction rules + ML. High-risk UPIs are added to blacklist; blacklisted UPIs
+ * return a clear "do not pay" message.
+ * Body: { amount: number, receiverUPI: string, description?: string, newPayee?: boolean }
+ */
+router.post('/validate-transaction', authenticateApiKey, async (req, res) => {
+    const startTime = Date.now();
+    try {
+        const { amount, receiverUPI, description, newPayee } = req.body || {};
+        const amt = Number(amount);
+        const receiver = typeof receiverUPI === 'string' ? receiverUPI.trim() : '';
+        if (receiver === '') {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Missing required field: receiverUPI'
+            });
+        }
+
+        // 1) Blacklist check: if this UPI is already blacklisted, return high risk immediately
+        const blacklisted = await Blacklist.findOne({ upiIds: receiver }).lean().exec();
+        if (blacklisted) {
+            const level = riskLevelFromScore(100);
+            return res.json({
+                status: 'success',
+                riskScore: 100,
+                riskLevel: level.riskLevel,
+                riskColor: level.riskColor,
+                riskEmoji: level.riskEmoji,
+                isFraud: true,
+                shouldBlock: true,
+                message: 'This UPI ID is in our blacklist. Do not send money or exchange with this recipient.',
+                triggeredIndicators: ['UPI ID is blacklisted – previously flagged as high risk'],
+                recommendations: [
+                    'Do not proceed with this payment.',
+                    'This recipient was previously flagged for fraud.',
+                    'Report to your bank if you have already sent money.'
+                ],
+                blacklisted: true,
+                responseTimeMs: Date.now() - startTime
+            });
+        }
+
+        const transaction = {
+            senderUPI: 'unknown',
+            receiverUPI: receiver,
+            amount: Number.isFinite(amt) ? amt : 0,
+            type: 'P2P',
+            description: typeof description === 'string' ? description : '',
+            isNewPayee: !!newPayee,
+            source: 'USER_PAY'
+        };
+
+        // 2) Rule-based transaction analysis (amount, new payee, etc.)
+        let analysis = await analyzeTransaction(transaction);
+
+        // 3) Message/description validation (same as chatbot: rule-based + NLP scam detection)
+        const combinedText = [
+            transaction.description,
+            receiver,
+            transaction.amount > 0 ? `Amount Rs ${transaction.amount}` : ''
+        ].filter(Boolean).join(' ');
+        const scamAnalysis = await detectScam(combinedText || receiver, []);
+        const scamScore = Math.round((scamAnalysis.confidence || 0) * 100);
+        const mergedScore = Math.max(analysis.riskScore ?? 0, scamScore);
+        analysis.riskScore = mergedScore;
+        analysis.riskLevel = riskLevelFromScore(mergedScore).riskLevel;
+        analysis.riskColor = riskLevelFromScore(mergedScore).riskColor;
+        analysis.riskEmoji = riskLevelFromScore(mergedScore).riskEmoji;
+        const scamIndicators = Array.isArray(scamAnalysis.indicators)
+            ? scamAnalysis.indicators.map((i) => (typeof i === 'string' ? i : `Scam: ${i}`))
+            : [];
+        const existingLabels = (analysis.indicators || []).map((i) => (typeof i === 'object' && i?.label ? i.label : String(i)));
+        analysis.indicators = [...existingLabels, ...scamIndicators];
+
+        // 4) Optional ML fusion (same formula: 0.6 rule + 0.4 ML)
+        const mlResult = await getMlFraudProbability({
+            text: combinedText || receiver,
+            transaction: { ...transaction, isNewPayee: transaction.isNewPayee }
+        });
+        if (mlResult) {
+            analysis = applyMlFusionToScanAnalysis(analysis, mlResult);
+        }
+
+        const riskScore = analysis.riskScore ?? mergedScore;
+        const shouldBlock = riskScore >= 70;
+        const isFraud = shouldBlock;
+
+        // 5) Add high-risk UPI to blacklist so future validations catch it
+        if (shouldBlock) {
+            await Blacklist.updateOne(
+                { scammerId: PAY_VALIDATION_BLACKLIST_ID },
+                {
+                    $addToSet: { upiIds: receiver },
+                    $set: { reason: 'Flagged from Pay validation (high risk)' }
+                },
+                { upsert: true }
+            ).exec();
+        }
+
+        const indicators = (analysis.indicators || []).map((i) =>
+            typeof i === 'object' && i?.label ? i.label : String(i)
+        );
+
+        return res.json({
+            status: 'success',
+            riskScore,
+            riskLevel: analysis.riskLevel || riskLevelFromScore(riskScore).riskLevel,
+            riskColor: analysis.riskColor || riskLevelFromScore(riskScore).riskColor,
+            riskEmoji: analysis.riskEmoji || riskLevelFromScore(riskScore).riskEmoji,
+            isFraud,
+            shouldBlock,
+            message: shouldBlock
+                ? 'Do not pay. This transaction was flagged as high risk.'
+                : riskScore >= 40
+                    ? 'Caution. Verify the recipient before paying.'
+                    : 'Transaction appears safe. Always verify the payee.',
+            triggeredIndicators: indicators,
+            recommendations: analysis.recommendedActions || [],
+            responseTimeMs: Date.now() - startTime
+        });
+    } catch (error) {
+        console.error('Validate transaction error:', error);
+        return res.status(500).json({
+            status: 'error',
+            message: 'Failed to validate transaction'
         });
     }
 });
