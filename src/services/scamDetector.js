@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import config from '../config/config.js';
+import detectOtpFraud from './otpFraudDetector.js';
 
 // Initialize Gemini client (OpenAI-compatible)
 let gemini = null;
@@ -152,7 +153,7 @@ Respond ONLY with a JSON object in this exact format:
 }
 
 /**
- * Combined scam detection (rule-based + AI)
+ * Combined scam detection (rule-based + AI + OTP fraud)
  */
 export async function detectScam(text, conversationHistory = []) {
     // Rule-based detection
@@ -160,6 +161,10 @@ export async function detectScam(text, conversationHistory = []) {
 
     // AI-based detection
     const aiResult = await detectWithAI(text, conversationHistory);
+
+    // OTP fraud detection (additive; does not remove existing logic)
+    const otpResult = detectOtpFraud(text);
+    const otpBoost = otpResult.riskIncrement > 0 ? otpResult.riskIncrement / 100 : 0;
 
     // Combine results
     let finalConfidence = ruleBasedResult.score;
@@ -186,6 +191,13 @@ export async function detectScam(text, conversationHistory = []) {
         }
 
         indicators = [...new Set([...indicators, ...(aiResult.indicators || [])])];
+    }
+
+    // Apply OTP fraud increment (cap confidence at 1)
+    if (otpBoost > 0) {
+        finalConfidence = Math.min(1, finalConfidence + otpBoost);
+        isScam = isScam || finalConfidence >= config.scamThreshold;
+        indicators = [...new Set([...indicators, ...otpResult.indicators])];
     }
 
     return {

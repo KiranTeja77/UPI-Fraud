@@ -309,4 +309,52 @@ Keep it simple, actionable, and culturally appropriate for Indian users. Respond
     };
 }
 
-export default { getTips, getContextualTips };
+// ─── Dynamic safety advice by fraud type ───
+const ADVICE_BY_FRAUD_TYPE = {
+    OTP: {
+        tips: [
+            'Never share OTP with anyone.',
+            'Banks never ask OTP over call.'
+        ],
+        warningMessage: 'This message appears to involve OTP sharing. Never share your OTP — banks and apps never ask for it over call or message.'
+    },
+    PHISHING: {
+        tips: [
+            'Do not click unknown links.',
+            'Verify domain before login.'
+        ],
+        warningMessage: 'Suspicious links detected. Do not click or enter credentials. Verify the website address and use only official apps.'
+    },
+    QR: {
+        tips: [
+            'Scanning QR always means paying money.',
+            'Never scan QR to receive funds.'
+        ],
+        warningMessage: 'Scanning a QR code always initiates a payment. You cannot receive money by scanning a QR — if someone says so, it is a scam.'
+    }
+};
+
+/**
+ * Generate safety tips and warning message for a detected fraud type.
+ *
+ * @param {{ fraudType: "OTP" | "PHISHING" | "QR" }} input
+ * @returns {{ tips: string[], warningMessage: string }}
+ */
+export function generateSafetyAdvice(input) {
+    const fraudType = (input?.fraudType || '').toUpperCase();
+    const advice = ADVICE_BY_FRAUD_TYPE[fraudType];
+
+    if (advice) {
+        return {
+            tips: [...advice.tips],
+            warningMessage: advice.warningMessage
+        };
+    }
+
+    return {
+        tips: ['Stay alert. Do not share OTP, PIN, or bank details with anyone.', 'Verify the recipient and amount before any payment.'],
+        warningMessage: 'Suspicious activity detected. Stay cautious and verify before taking action.'
+    };
+}
+
+export default { getTips, getContextualTips, generateSafetyAdvice };

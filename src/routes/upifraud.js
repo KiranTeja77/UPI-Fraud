@@ -7,7 +7,7 @@ import { generateAlert, getSupportedLanguages } from '../services/regionalAlertS
 import { getTips, getContextualTips } from '../services/safetyTipsService.js';
 import { decodeQrFromBuffer } from '../services/qrDecoderService.js';
 import { analyzeUpiQr } from '../services/qrAnalyzerService.js';
-import { getMlFraudProbability, applyMlFusionToScanAnalysis } from '../services/mlFraudService.js';
+import { getMlFraudProbability, applyAdvancedFusionToScanAnalysis } from '../services/mlFraudService.js';
 import { detectScam } from '../services/scamDetector.js';
 import Blacklist from '../models/Blacklist.js';
 
@@ -183,13 +183,13 @@ router.post('/validate-transaction', authenticateApiKey, async (req, res) => {
         const existingLabels = (analysis.indicators || []).map((i) => (typeof i === 'object' && i?.label ? i.label : String(i)));
         analysis.indicators = [...existingLabels, ...scamIndicators];
 
-        // 4) Optional ML fusion (same formula: 0.6 rule + 0.4 ML)
+        // 4) Optional ML fusion (advanced: ML>0.9 → 60% ML weight; rule>80 → +10; blacklist handled above)
         const mlResult = await getMlFraudProbability({
             text: combinedText || receiver,
             transaction: { ...transaction, isNewPayee: transaction.isNewPayee }
         });
         if (mlResult) {
-            analysis = applyMlFusionToScanAnalysis(analysis, mlResult);
+            analysis = applyAdvancedFusionToScanAnalysis(analysis, mlResult, false);
         }
 
         const riskScore = analysis.riskScore ?? mergedScore;
